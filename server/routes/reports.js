@@ -4,72 +4,60 @@ import auth from "../middleware/auth.js";
 
 const router = express.Router();
 
-// 🔹 Create new report (citizens only)
+// Create a new report (citizen only)
 router.post("/", auth("citizen"), async (req, res) => {
   try {
-    const { title, description, category, severity, location } = req.body;
+    const { title, description, category, severity, lat, lng, media } =
+      req.body;
 
-    // Validate required fields
     if (!title || !description || !category)
       return res
         .status(400)
-        .json({ message: "Title, description, category required" });
+        .json({ message: "Title, description, and category are required" });
 
-    // Validate location
-    if (
-      !location ||
-      !Array.isArray(location.coordinates) ||
-      location.coordinates.length !== 2
-    ) {
-      return res
-        .status(400)
-        .json({ message: "Location coordinates required [lng, lat]" });
-    }
-
-    const lng = parseFloat(location.coordinates[0]);
-    const lat = parseFloat(location.coordinates[1]);
     const sev = parseInt(severity);
+    const longitude = parseFloat(lng);
+    const latitude = parseFloat(lat);
 
-    if (isNaN(lng) || isNaN(lat))
+    if (isNaN(longitude) || isNaN(latitude))
       return res.status(400).json({ message: "Invalid coordinates" });
     if (isNaN(sev) || sev < 1 || sev > 5)
-      return res.status(400).json({ message: "Severity must be 1-5" });
+      return res.status(400).json({ message: "Severity must be between 1–5" });
 
-    // 🔹 Duplicate check within 50 meters
+    // Check duplicates within 50 meters
     const near = await Report.findOne({
       category,
       location: {
         $near: {
-          $geometry: { type: "Point", coordinates: [lng, lat] },
+          $geometry: { type: "Point", coordinates: [longitude, latitude] },
           $maxDistance: 50,
         },
       },
     });
 
-    if (near) {
+    if (near)
       return res
         .status(409)
         .json({ message: "Possible duplicate", duplicateId: near._id });
-    }
 
-    // Create report
     const report = await Report.create({
       title,
       description,
       category,
       severity: sev,
-      location: { type: "Point", coordinates: [lng, lat] },
+      location: { type: "Point", coordinates: [longitude, latitude] },
+      media: media || [],
       reporter: req.user.id,
     });
 
     res.status(201).json(report);
   } catch (err) {
-    console.error("Report create error:", err);
+    console.error("Report creation error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// 🔹 List reports with optional filter
+// List reports (optional category filter)
 router.get("/", async (req, res) => {
   const { category } = req.query;
   const filter = {};
@@ -81,22 +69,24 @@ router.get("/", async (req, res) => {
       .sort({ createdAt: -1 });
     res.json(reports);
   } catch (err) {
-    console.error(err);
+    console.error("Fetch reports error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// 🔹 Report detail
+// Report details
 router.get("/:id", async (req, res) => {
   try {
-    const rpt = await Report.findById(req.params.id).populate(
-      "reporter",
-      "name email"
-    );
+    const rpt = await Report.findById(req.params.id)
+      .populate("reporter", "name email")
+      .populate("comments.by", "name email")
+      .populate("comments.repliedBy", "name email");
+
     if (!rpt) return res.status(404).json({ message: "Report not found" });
+
     res.json(rpt);
   } catch (err) {
-    console.error(err);
+    console.error("Report detail error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });

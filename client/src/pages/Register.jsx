@@ -14,7 +14,12 @@ export default function Register() {
         form,
         { withCredentials: true }
       );
+
+      // ✅ Save all required info in localStorage
       localStorage.setItem("accessToken", res.data.accessToken);
+      localStorage.setItem("role", res.data.role);
+      localStorage.setItem("userId", res.data.userId);
+
       nav("/report");
     } catch (err) {
       alert(err.response?.data?.message || "Error");
@@ -27,25 +32,33 @@ export default function Register() {
       onSubmit={submit}
     >
       <h2 className="text-lg font-semibold mb-3">Register</h2>
+
       <input
         className="w-full border p-2 mb-2"
         placeholder="Name"
         value={form.name}
         onChange={(e) => setForm({ ...form, name: e.target.value })}
+        required
       />
+
       <input
         className="w-full border p-2 mb-2"
         placeholder="Email"
+        type="email"
         value={form.email}
         onChange={(e) => setForm({ ...form, email: e.target.value })}
+        required
       />
+
       <input
         className="w-full border p-2 mb-2"
         type="password"
         placeholder="Password"
         value={form.password}
         onChange={(e) => setForm({ ...form, password: e.target.value })}
+        required
       />
+
       <button className="bg-blue-600 text-white px-4 py-2 rounded">
         Register
       </button>

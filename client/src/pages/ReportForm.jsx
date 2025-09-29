@@ -1,5 +1,30 @@
 import { useState } from "react";
 import axios from "axios";
+import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import "leaflet/dist/leaflet.css";
+import L from "leaflet";
+
+// Fix default marker icon issue in Leaflet
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl:
+    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png",
+  iconUrl:
+    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png",
+  shadowUrl:
+    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
+});
+
+// Component for selecting location on map
+function LocationMarker({ position, setPosition }) {
+  useMapEvents({
+    click(e) {
+      setPosition([e.latlng.lat, e.latlng.lng]);
+    },
+  });
+
+  return position ? <Marker position={position}></Marker> : null;
+}
 
 export default function ReportForm() {
   const [form, setForm] = useState({
@@ -7,29 +32,40 @@ export default function ReportForm() {
     description: "",
     category: "pothole",
     severity: 3,
-    lng: "",
-    lat: "",
   });
+  const [position, setPosition] = useState([19.0617, 72.8305]); // default: Bandra
+  const [files, setFiles] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  async function submit(e) {
+  const submit = async (e) => {
     e.preventDefault();
-
     const token = localStorage.getItem("accessToken");
-    if (!token) return alert("Please login first!");
+    if (!token) return alert("Login first!");
 
-    // Prepare payload
-    const payload = {
-      title: form.title,
-      description: form.description,
-      category: form.category,
-      severity: parseInt(form.severity),
-      location: {
-        type: "Point",
-        coordinates: [parseFloat(form.lng), parseFloat(form.lat)],
-      },
-    };
-
+    setLoading(true);
     try {
+      // Upload media first
+      let media = [];
+      if (files.length > 0) {
+        const formData = new FormData();
+        files.forEach((f) => formData.append("media", f));
+        const mediaRes = await axios.post(
+          "http://localhost:5000/api/media",
+          formData,
+          {
+            headers: { "Content-Type": "multipart/form-data" },
+          }
+        );
+        media = mediaRes.data.uploaded; // [{url, mime}]
+      }
+
+      const payload = {
+        ...form,
+        lat: position[0],
+        lng: position[1],
+        media,
+      };
+
       const res = await axios.post(
         "http://localhost:5000/api/reports",
         payload,
@@ -38,35 +74,29 @@ export default function ReportForm() {
         }
       );
 
-      alert("✅ Report submitted successfully!");
-      console.log("New Report:", res.data);
+      alert("Report submitted successfully!");
+      console.log(res.data);
 
-      // Reset form
-      setForm({
-        title: "",
-        description: "",
-        category: "pothole",
-        severity: 3,
-        lng: "",
-        lat: "",
-      });
+      // reset form
+      setForm({ title: "", description: "", category: "pothole", severity: 3 });
+      setFiles([]);
+      setPosition([19.0617, 72.8305]);
     } catch (err) {
+      console.error("Submit error:", err);
       if (err.response?.status === 409) {
-        alert(
-          "⚠ Duplicate issue found nearby! Report ID: " +
-            err.response.data.duplicateId
-        );
+        alert("Duplicate nearby issue detected!");
       } else {
         alert(err.response?.data?.message || "Error submitting report");
-        console.error(err);
       }
+    } finally {
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <form
+      className="max-w-md mx-auto p-4 bg-white shadow rounded"
       onSubmit={submit}
-      className="max-w-md mx-auto bg-white shadow p-4 rounded"
     >
       <h2 className="text-lg font-semibold mb-3">Report an Issue</h2>
 
@@ -75,6 +105,7 @@ export default function ReportForm() {
         placeholder="Title"
         value={form.title}
         onChange={(e) => setForm({ ...form, title: e.target.value })}
+        required
       />
 
       <textarea
@@ -82,11 +113,12 @@ export default function ReportForm() {
         placeholder="Description"
         value={form.description}
         onChange={(e) => setForm({ ...form, description: e.target.value })}
+        required
       />
 
       <div className="flex gap-2 mb-2">
         <select
-          className="border p-2"
+          className="border p-2 flex-1"
           value={form.category}
           onChange={(e) => setForm({ ...form, category: e.target.value })}
         >
@@ -101,27 +133,41 @@ export default function ReportForm() {
           max="5"
           className="border p-2 w-20"
           value={form.severity}
-          onChange={(e) => setForm({ ...form, severity: e.target.value })}
+          onChange={(e) =>
+            setForm({ ...form, severity: parseInt(e.target.value) })
+          }
         />
       </div>
 
-      <div className="flex gap-2 mb-2">
-        <input
-          className="border p-2 w-1/2"
-          placeholder="Longitude"
-          value={form.lng}
-          onChange={(e) => setForm({ ...form, lng: e.target.value })}
-        />
-        <input
-          className="border p-2 w-1/2"
-          placeholder="Latitude"
-          value={form.lat}
-          onChange={(e) => setForm({ ...form, lat: e.target.value })}
-        />
+      <div className="mb-2">
+        <label className="text-sm mb-1 block">Select Location on Map:</label>
+        <MapContainer
+          center={position}
+          zoom={15}
+          style={{ height: "300px", width: "100%" }}
+        >
+          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+          <LocationMarker position={position} setPosition={setPosition} />
+        </MapContainer>
+        <p className="text-xs mt-1">
+          Lat: {position[0].toFixed(5)}, Lng: {position[1].toFixed(5)}
+        </p>
       </div>
 
-      <button className="bg-blue-600 text-white px-4 py-2 rounded">
-        Submit
+      <input
+        type="file"
+        multiple
+        accept="image/*,video/*"
+        onChange={(e) => setFiles(Array.from(e.target.files))}
+        className="mb-2"
+      />
+
+      <button
+        type="submit"
+        className="bg-blue-600 text-white px-4 py-2 rounded"
+        disabled={loading}
+      >
+        {loading ? "Submitting..." : "Submit"}
       </button>
     </form>
   );

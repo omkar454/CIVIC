@@ -5,7 +5,9 @@ import { signAccessToken, signRefreshToken } from "../utils/jwt.js";
 
 const router = express.Router();
 
+// --------------------
 // Register
+// --------------------
 router.post("/register", async (req, res) => {
   const { name, email, password } = req.body;
 
@@ -27,8 +29,10 @@ router.post("/register", async (req, res) => {
 
     res.json({
       accessToken,
+      role: user.role,       // ✅ added
+      userId: user._id,      // ✅ added
       user: {
-        id: user._id,
+        _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
@@ -40,7 +44,9 @@ router.post("/register", async (req, res) => {
   }
 });
 
+// --------------------
 // Login
+// --------------------
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
 
@@ -62,8 +68,10 @@ router.post("/login", async (req, res) => {
 
     res.json({
       accessToken,
+      role: user.role,       // ✅ added
+      userId: user._id,      // ✅ added
       user: {
-        id: user._id,
+        _id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
