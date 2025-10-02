@@ -1,59 +1,92 @@
+// Login.jsx (updated)
 import { useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 
-export default function Login() {
-  const [form, setForm] = useState({ email: "", password: "" });
-  const nav = useNavigate();
+export default function Login({ setUserRole }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const navigate = useNavigate();
 
-  async function submit(e) {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    try {
-      const res = await axios.post(
-        "http://localhost:5000/api/auth/login",
-        form,
-        { withCredentials: true }
-      );
+    setLoading(true);
+    setError("");
 
-      // ✅ Save everything in localStorage
+    try {
+      const res = await axios.post("http://localhost:5000/api/auth/login", {
+        email,
+        password,
+      });
+
+      // Save tokens and user info
       localStorage.setItem("accessToken", res.data.accessToken);
       localStorage.setItem("role", res.data.role);
       localStorage.setItem("userId", res.data.userId);
 
-      nav("/report");
+      // Save warnings (read from backend User model)
+      localStorage.setItem("warnings", res.data.warnings || 0);
+
+      setUserRole(res.data.role);
+      navigate("/"); // redirect to Home
     } catch (err) {
-      alert(err.response?.data?.message || "Error");
+      console.error("Login error:", err);
+      setError(err.response?.data?.message || "Login failed");
+    } finally {
+      setLoading(false);
     }
-  }
+  };
 
   return (
     <form
+      onSubmit={handleSubmit}
       className="max-w-md mx-auto p-4 bg-white shadow rounded"
-      onSubmit={submit}
     >
       <h2 className="text-lg font-semibold mb-3">Login</h2>
 
+      {error && (
+        <div className="bg-red-100 text-red-700 px-3 py-2 rounded mb-3 border border-red-400">
+          {error}
+        </div>
+      )}
+
       <input
-        className="w-full border p-2 mb-2"
-        placeholder="Email"
         type="email"
-        value={form.email}
-        onChange={(e) => setForm({ ...form, email: e.target.value })}
+        placeholder="Email"
+        value={email}
+        onChange={(e) => setEmail(e.target.value)}
+        className="border w-full p-2 mb-2"
         required
       />
 
       <input
-        className="w-full border p-2 mb-2"
         type="password"
         placeholder="Password"
-        value={form.password}
-        onChange={(e) => setForm({ ...form, password: e.target.value })}
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+        className="border w-full p-2 mb-2"
         required
       />
 
-      <button className="bg-blue-600 text-white px-4 py-2 rounded">
-        Login
+      <button
+        type="submit"
+        className="bg-blue-600 text-white px-4 py-2 rounded w-full"
+        disabled={loading}
+      >
+        {loading ? "Logging in..." : "Login"}
       </button>
+
+      <p className="mt-2 text-sm">
+        Don't have an account?{" "}
+        <span
+          className="text-blue-600 underline cursor-pointer"
+          onClick={() => navigate("/register")}
+        >
+          Register now
+        </span>
+      </p>
     </form>
   );
 }

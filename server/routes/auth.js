@@ -1,86 +1,124 @@
+// routes/auth.js
 import express from "express";
 import bcrypt from "bcryptjs";
 import User from "../models/User.js";
+import dotenv from "dotenv";
 import { signAccessToken, signRefreshToken } from "../utils/jwt.js";
+
+dotenv.config({ path: "./.env" });
 
 const router = express.Router();
 
-// --------------------
-// Register
-// --------------------
+// ======================
+// REGISTER
+// ======================
 router.post("/register", async (req, res) => {
-  const { name, email, password } = req.body;
-
   try {
-    let user = await User.findOne({ email });
-    if (user)
-      return res.status(400).json({ message: "Email already registered" });
+    const { name, email, password, role } = req.body;
 
-    const hash = await bcrypt.hash(password, 10);
-    user = await User.create({ name, email, passwordHash: hash });
+    if (!name || !email || !password) {
+      return res.status(400).json({ message: "All fields are required" });
+    }
 
-    const accessToken = signAccessToken({ id: user._id, role: user.role });
-    const refreshToken = signRefreshToken({ id: user._id });
+    const existing = await User.findOne({ email });
+    if (existing) {
+      return res.status(409).json({ message: "Email already registered" });
+    }
 
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      sameSite: "lax",
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    const user = await User.create({
+      name,
+      email,
+      passwordHash,
+      role: role || "citizen",
     });
 
-    res.json({
-      accessToken,
-      role: user.role,       // ✅ added
-      userId: user._id,      // ✅ added
+    // Generate tokens using utils/jwt.js
+    const accessToken = signAccessToken({ userId: user._id, role: user.role });
+    const refreshToken = signRefreshToken({
+      userId: user._id,
+      role: user.role,
+    });
+
+    res.status(201).json({
+      message: "User registered successfully",
       user: {
-        _id: user._id,
+        id: user._id,
         name: user.name,
         email: user.email,
         role: user.role,
       },
+      accessToken,
+      refreshToken,
     });
   } catch (err) {
     console.error("Register error:", err);
-    res.status(500).json({ message: "Server error", error: err.message });
+    res.status(500).json({ message: "Server error" });
   }
 });
 
-// --------------------
-// Login
-// --------------------
+// ======================
+// LOGIN
+// ======================
 router.post("/login", async (req, res) => {
-  const { email, password } = req.body;
-
   try {
+    const { email, password } = req.body;
+
     const user = await User.findOne({ email });
     if (!user) return res.status(400).json({ message: "Invalid credentials" });
 
-    const ok = await bcrypt.compare(password, user.passwordHash);
-    if (!ok) return res.status(400).json({ message: "Invalid credentials" });
-    if (user.blocked) return res.status(403).json({ message: "User blocked" });
+    // 🚨 Check if blocked
+    if (user.blocked) {
+      return res.status(403).json({
+        message: "Your account has been blocked. Please contact support.",
+        warnings: user.warnings || 0,
+        blocked: true,
+      });
+    }
 
-    const accessToken = signAccessToken({ id: user._id, role: user.role });
-    const refreshToken = signRefreshToken({ id: user._id });
+    // AUTO block if warnings >= 3
+    if (user.warnings >= 3) {
+      user.blocked = true;
+      await user.save();
+      return res.status(403).json({
+        message: "Account blocked due to multiple warnings.",
+        warnings: user.warnings || 0,
+        blocked: true,
+      });
+    }
 
-    res.cookie("refreshToken", refreshToken, {
-      httpOnly: true,
-      sameSite: "lax",
+    const validPass = await bcrypt.compare(password, user.passwordHash);
+    if (!validPass) {
+      return res.status(400).json({
+        message: "Invalid credentials",
+        warnings: user.warnings || 0,
+        blocked: user.blocked || false,
+      });
+    }
+
+    // Generate tokens
+    const accessToken = signAccessToken({ userId: user._id, role: user.role });
+    const refreshToken = signRefreshToken({
+      userId: user._id,
+      role: user.role,
     });
 
+    // ✅ Include warnings and blocked in response
     res.json({
+      message: "Login successful",
+      userId: user._id,
+      role: user.role,
+      warnings: user.warnings || 0,    // 🔹 add this
+      blocked: user.blocked || false,  // 🔹 add this
       accessToken,
-      role: user.role,       // ✅ added
-      userId: user._id,      // ✅ added
-      user: {
-        _id: user._id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-      },
+      refreshToken,
     });
   } catch (err) {
     console.error("Login error:", err);
-    res.status(500).json({ message: "Server error", error: err.message });
+    res.status(500).json({ message: "Server error" });
   }
 });
+
 
 export default router;

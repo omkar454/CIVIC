@@ -1,3 +1,4 @@
+// middleware/auth.js
 import jwt from "jsonwebtoken";
 
 export default function auth(requiredRole = null) {
@@ -9,14 +10,18 @@ export default function auth(requiredRole = null) {
 
     try {
       const payload = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
-      req.user = payload; // contains id + role
 
-      if (
-        requiredRole &&
-        payload.role !== requiredRole &&
-        payload.role !== "admin"
-      ) {
-        return res.status(403).json({ message: "Forbidden" });
+      // Always use `req.user.id`
+      req.user = { id: payload.userId, role: payload.role };
+
+      if (requiredRole) {
+        const roles = Array.isArray(requiredRole)
+          ? requiredRole
+          : [requiredRole];
+
+        if (!roles.includes(req.user.role) && req.user.role !== "admin") {
+          return res.status(403).json({ message: "Forbidden" });
+        }
       }
 
       next();

@@ -15,14 +15,13 @@ L.Icon.Default.mergeOptions({
     "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
 });
 
-// Component for selecting location on map
+// Component to select location on map
 function LocationMarker({ position, setPosition }) {
   useMapEvents({
     click(e) {
       setPosition([e.latlng.lat, e.latlng.lng]);
     },
   });
-
   return position ? <Marker position={position}></Marker> : null;
 }
 
@@ -49,16 +48,22 @@ export default function ReportForm() {
       if (files.length > 0) {
         const formData = new FormData();
         files.forEach((f) => formData.append("media", f));
+
         const mediaRes = await axios.post(
           "http://localhost:5000/api/media",
           formData,
           {
-            headers: { "Content-Type": "multipart/form-data" },
+            headers: {
+              Authorization: "Bearer " + token, // ✅ Added
+              "Content-Type": "multipart/form-data",
+            },
           }
         );
+
         media = mediaRes.data.uploaded; // [{url, mime}]
       }
 
+      // Create report payload
       const payload = {
         ...form,
         lat: position[0],
@@ -70,14 +75,14 @@ export default function ReportForm() {
         "http://localhost:5000/api/reports",
         payload,
         {
-          headers: { Authorization: "Bearer " + token },
+          headers: { Authorization: "Bearer " + token }, // ✅ Already correct
         }
       );
 
       alert("Report submitted successfully!");
       console.log(res.data);
 
-      // reset form
+      // Reset form
       setForm({ title: "", description: "", category: "pothole", severity: 3 });
       setFiles([]);
       setPosition([19.0617, 72.8305]);
@@ -139,6 +144,7 @@ export default function ReportForm() {
         />
       </div>
 
+      {/* Map for location */}
       <div className="mb-2">
         <label className="text-sm mb-1 block">Select Location on Map:</label>
         <MapContainer
@@ -154,6 +160,7 @@ export default function ReportForm() {
         </p>
       </div>
 
+      {/* File uploads */}
       <input
         type="file"
         multiple
@@ -162,9 +169,33 @@ export default function ReportForm() {
         className="mb-2"
       />
 
+      {/* Preview media */}
+      {files.length > 0 && (
+        <div className="flex gap-2 mb-2 flex-wrap">
+          {files.map((f, i) => {
+            const url = URL.createObjectURL(f);
+            return f.type.startsWith("image/") ? (
+              <img
+                key={i}
+                src={url}
+                alt="preview"
+                className="w-24 h-24 object-cover rounded border"
+              />
+            ) : (
+              <video
+                key={i}
+                src={url}
+                controls
+                className="w-32 h-24 object-cover rounded border"
+              />
+            );
+          })}
+        </div>
+      )}
+
       <button
         type="submit"
-        className="bg-blue-600 text-white px-4 py-2 rounded"
+        className="bg-blue-600 text-white px-4 py-2 rounded w-full"
         disabled={loading}
       >
         {loading ? "Submitting..." : "Submit"}
