@@ -1,142 +1,150 @@
-// App.jsx
-import { Routes, Route, Link, useNavigate } from "react-router-dom";
+// src/App.jsx
+import { Routes, Route, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 
 import Home from "./pages/Home";
 import Register from "./pages/Register";
 import Login from "./pages/Login";
 import ReportForm from "./pages/ReportForm";
-import ReportsList from "./pages/ReportsLists";
+import ReportsLists from "./pages/ReportsLists";
 import ReportDetail from "./pages/ReportDetail";
 import OfficerQueue from "./pages/OfficerQueue";
-import AdminPage from "./pages/AdminPage"; // Admin dashboard
+import AdminPage from "./pages/AdminPage";
+
 import PrivateRoute from "./components/PrivateRoute";
+import Sidebar from "./components/Sidebar";
+import Navbar from "./components/Navbar";
 
 function App() {
   const [userRole, setUserRole] = useState(null);
+  const [userName, setUserName] = useState(""); // ✅ NEW
+  const [darkMode, setDarkMode] = useState(false);
   const navigate = useNavigate();
 
-  // Get role from localStorage on page load
+  // Load role + name + dark mode from localStorage
   useEffect(() => {
     const role = localStorage.getItem("role");
+    const name = localStorage.getItem("name");
     setUserRole(role);
+    setUserName(name || "");
+
+    const savedMode = localStorage.getItem("darkMode");
+    if (savedMode === "true") setDarkMode(true);
   }, []);
 
   const handleLogout = () => {
     localStorage.clear();
     setUserRole(null);
+    setUserName(""); // ✅ reset name
     navigate("/login");
   };
 
+  const toggleDarkMode = () => {
+    setDarkMode((prev) => {
+      localStorage.setItem("darkMode", !prev);
+      return !prev;
+    });
+  };
+
   return (
-    <div>
-      {/* Navigation */}
-      <nav className="bg-blue-600 text-white p-4 flex justify-between items-center">
-        <h1 className="font-bold">CIVIC</h1>
-        <div className="space-x-4">
-          {!userRole ? (
-            <>
-              <Link to="/login">Login</Link>
-              <Link to="/register">Register</Link>
-            </>
-          ) : (
-            <>
-              <Link to="/">Home</Link>
+    <div
+      className={`min-h-screen flex ${
+        darkMode ? "dark bg-gray-900 text-white" : "bg-gray-100 text-gray-900"
+      }`}
+    >
+      {/* Sidebar only if logged in */}
+      {userRole && <Sidebar role={userRole} name={userName} />}{" "}
+      {/* ✅ pass name */}
+      {/* Main content */}
+      <div className="flex-1 flex flex-col">
+        <Navbar
+          darkMode={darkMode}
+          toggleDarkMode={toggleDarkMode}
+          handleLogout={handleLogout}
+          role={userRole}
+          name={userName} // ✅ pass name to Navbar
+        />
 
-              {/* Citizen-only link */}
-              {userRole === "citizen" && <Link to="/report">Report Issue</Link>}
-
-              {/* All logged-in users */}
-              <Link to="/reports">All Reports</Link>
-
-              {/* Officer-only link */}
-              {userRole === "officer" && (
-                <Link to="/officer-queue">Officer Queue</Link>
-              )}
-
-              {/* Admin-only link */}
-              {userRole === "admin" && <Link to="/admin">Admin Dashboard</Link>}
-
-              <button onClick={handleLogout} className="ml-2 underline">
-                Logout
-              </button>
-            </>
-          )}
-        </div>
-      </nav>
-
-      {/* Routes */}
-      <main className="p-4">
-        <Routes>
-          {/* Guest routes */}
-          {!userRole ? (
-            <>
-              <Route
-                path="/login"
-                element={<Login setUserRole={setUserRole} />}
-              />
-              <Route
-                path="/register"
-                element={<Register setUserRole={setUserRole} />}
-              />
-              <Route path="*" element={<Login setUserRole={setUserRole} />} />
-            </>
-          ) : (
-            <>
-              {/* Logged-in routes */}
-              <Route path="/" element={<Home />} />
-
-              {/* Officer-only routes */}
-              <Route
-                path="/officer-queue"
-                element={
-                  <PrivateRoute roles={["officer"]}>
-                    <OfficerQueue />
-                  </PrivateRoute>
-                }
-              />
-
-              {/* Admin-only route */}
-              <Route
-                path="/admin"
-                element={
-                  <PrivateRoute roles={["admin"]}>
-                    <AdminPage />
-                  </PrivateRoute>
-                }
-              />
-
-              {/* Citizen-only routes */}
-              <Route
-                path="/report"
-                element={
-                  <PrivateRoute roles={["citizen"]}>
-                    <ReportForm />
-                  </PrivateRoute>
-                }
-              />
-
-              {/* All logged-in users */}
-              <Route
-                path="/reports"
-                element={
-                  <PrivateRoute roles={["citizen", "officer", "admin"]}>
-                    <ReportsList />
-                  </PrivateRoute>
-                }
-              />
-              <Route
-                path="/reports/:id"
-                element={
-                  <PrivateRoute roles={["citizen", "officer", "admin"]}>
-                    <ReportDetail />
-                  </PrivateRoute>
-                }
-              />
-            </>
-          )}
-        </Routes>
-      </main>
+        <main className="p-6 flex-1">
+          <Routes>
+            {!userRole ? (
+              <>
+                <Route
+                  path="/login"
+                  element={
+                    <Login
+                      setUserRole={setUserRole}
+                      setUserName={setUserName}
+                    />
+                  } // ✅ send both
+                />
+                <Route
+                  path="/register"
+                  element={
+                    <Register
+                      setUserRole={setUserRole}
+                      setUserName={setUserName}
+                    />
+                  } // ✅ send both
+                />
+                <Route
+                  path="*"
+                  element={
+                    <Login
+                      setUserRole={setUserRole}
+                      setUserName={setUserName}
+                    />
+                  }
+                />
+              </>
+            ) : (
+              <>
+                <Route path="/" element={<Home />} />
+                <Route
+                  path="/officer-queue"
+                  element={
+                    <PrivateRoute roles={["officer"]}>
+                      <OfficerQueue />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/admin"
+                  element={
+                    <PrivateRoute roles={["admin"]}>
+                      <AdminPage />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/report"
+                  element={
+                    <PrivateRoute roles={["citizen"]}>
+                      <ReportForm />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/reports"
+                  element={
+                    <PrivateRoute roles={["citizen", "officer", "admin"]}>
+                      <ReportsLists darkMode={darkMode} />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/reports/:id"
+                  element={
+                    <PrivateRoute roles={["citizen", "officer", "admin"]}>
+                      <ReportDetail darkMode={darkMode} />
+                    </PrivateRoute>
+                  }
+                />
+              </>
+            )}
+          </Routes>
+        </main>
+      </div>
     </div>
   );
 }

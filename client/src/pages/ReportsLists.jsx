@@ -1,194 +1,158 @@
-// pages/ReportsList.jsx
-import { useEffect, useState } from "react";
+// src/pages/ReportLists.jsx
+import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import axios from "axios";
+import API from "../services/api";
+import ReportsFilter from "../components/ReportsFilter";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
 
-export default function ReportsList() {
+export default function ReportLists({ darkMode }) {
   const [reports, setReports] = useState([]);
-  const [statusUpdates, setStatusUpdates] = useState({});
-  const [loadingVote, setLoadingVote] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState({});
+  const [search, setSearch] = useState("");
 
   const token = localStorage.getItem("accessToken");
   const userRole = localStorage.getItem("role");
-  const currentUserId = localStorage.getItem("userId");
+  const userDepartment = localStorage.getItem("department"); // department stored during login
 
-  // Fetch all reports
   const fetchReports = async () => {
-    if (!token) {
-      alert("Please login first!");
-      return;
-    }
+    setLoading(true);
     try {
-      const res = await axios.get("http://localhost:5000/api/reports", {
-        headers: {
-          Authorization: "Bearer " + token, // ✅ send token
-        },
+      const queryObj = { ...filters };
+
+      // Only officers get department-specific reports
+      if (userRole === "officer" && userDepartment) {
+        queryObj.department = userDepartment;
+      }
+
+      if (search) queryObj.search = search;
+
+      const query = new URLSearchParams(queryObj).toString();
+      const res = await API.get(`/reports?${query}`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      const reportsArray = res.data.reports || [];
-      const safeReports = reportsArray.map((r) => ({
-        ...r,
-        status: r.status || "Open",
-        votes: r.votes || 0,
-        reporter: r.reporter || { name: "Unknown", email: "N/A" },
-        voters: r.voters || [],
-      }));
-      setReports(safeReports);
+      setReports(res.data.reports || []);
     } catch (err) {
       console.error("Failed to fetch reports:", err);
-      alert(err.response?.data?.message || "Failed to fetch reports");
+      setReports([]);
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchReports();
-  }, [token]);
+  }, [filters, search]);
 
-  // Citizen upvote
-  const handleVote = async (reportId) => {
-    if (!token) return alert("Login first!");
-    setLoadingVote((prev) => ({ ...prev, [reportId]: true }));
-
-    try {
-      await axios.post(
-        `http://localhost:5000/api/votesComments/${reportId}/vote`,
-        {},
-        { headers: { Authorization: "Bearer " + token } }
-      );
-      fetchReports();
-    } catch (err) {
-      alert(err.response?.data?.message || "Failed to vote");
-    } finally {
-      setLoadingVote((prev) => ({ ...prev, [reportId]: false }));
-    }
+  const statusColor = {
+    Open: "bg-red-100 text-red-700",
+    Acknowledged: "bg-yellow-100 text-yellow-700",
+    "In Progress": "bg-blue-100 text-blue-700",
+    Resolved: "bg-green-100 text-green-700",
   };
-
-  // Officer inline status update
-  const handleStatusChange = async (reportId) => {
-    if (!token || userRole !== "officer") return;
-    try {
-      await axios.post(
-        `http://localhost:5000/api/reports/${reportId}/status`,
-        { status: statusUpdates[reportId] },
-        { headers: { Authorization: "Bearer " + token } }
-      );
-      fetchReports();
-    } catch (err) {
-      alert(err.response?.data?.message || "Failed to update status");
-    }
-  };
-
-  if (!reports || reports.length === 0)
-    return <p className="text-center mt-8">No reports yet.</p>;
 
   return (
-    <div className="max-w-3xl mx-auto">
-      <h2 className="text-lg font-semibold mb-3">All Issues</h2>
+    <div className="max-w-7xl mx-auto p-4 space-y-6">
+      <h1 className="text-3xl font-bold text-blue-700 dark:text-blue-400">
+        Civic Reports Dashboard
+      </h1>
 
-      {reports.map((r) => {
-        const hasVoted = r.voters?.includes(currentUserId);
-        const isReporter = r.reporter?._id === currentUserId;
+      {/* Filters and Search */}
+      <div className="flex flex-col md:flex-row md:items-end gap-4">
+        <ReportsFilter onFilter={setFilters} />
+        <input
+          type="text"
+          placeholder="Search by title or reporter"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="border p-2 rounded w-full md:w-64 focus:outline-none focus:ring focus:ring-blue-400 dark:bg-gray-800 dark:text-white"
+        />
+      </div>
 
-        return (
-          <div key={r._id} className="bg-white shadow p-3 mb-4 rounded">
-            <h3 className="font-bold text-lg">{r.title}</h3>
-            <p className="mb-1">{r.description}</p>
-            <p className="text-sm text-gray-600">
-              Category: {r.category} | Severity: {r.severity}
-            </p>
-            <p className="text-sm text-gray-500 mb-2">
-              Reported by: {r.reporter?.name}
-            </p>
-
-            {/* Citizen upvote */}
-            {userRole === "citizen" && (
-              <div className="mb-2">
-                <button
-                  onClick={() => handleVote(r._id)}
-                  disabled={hasVoted || isReporter || loadingVote[r._id]}
-                  className={`px-4 py-2 rounded mr-2 ${
-                    hasVoted || isReporter
-                      ? "bg-gray-400"
-                      : "bg-green-600 text-white"
+      {/* Reports Table */}
+      {loading ? (
+        <p className="text-center text-gray-500">Loading reports...</p>
+      ) : reports.length === 0 ? (
+        <p className="text-center text-gray-500">No reports found.</p>
+      ) : (
+        <div className="overflow-x-auto border rounded shadow-lg">
+          <table
+            className={`w-full table-auto border-collapse ${
+              darkMode ? "border-gray-700" : "border-gray-300"
+            }`}
+          >
+            <thead
+              className={`text-left ${
+                darkMode ? "bg-gray-800 text-white" : "bg-gray-100"
+              }`}
+            >
+              <tr>
+                <th className="p-3 sticky top-0">Title</th>
+                <th className="p-3">Category</th>
+                <th className="p-3">Severity</th>
+                <th className="p-3">Status</th>
+                <th className="p-3">Reporter</th>
+                <th className="p-3">Date</th>
+                <th className="p-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {reports.map((r) => (
+                <tr
+                  key={r._id}
+                  className={`border-t hover:bg-gray-50 ${
+                    darkMode ? "hover:bg-gray-700" : ""
                   }`}
                 >
-                  {loadingVote[r._id]
-                    ? "Voting..."
-                    : hasVoted
-                    ? `Voted (${r.votes})`
-                    : isReporter
-                    ? `Cannot vote your own report (${r.votes})`
-                    : `Upvote (${r.votes})`}
-                </button>
-              </div>
-            )}
-
-            {/* Officer inline status */}
-            {userRole === "officer" && (
-              <div className="mb-2 flex items-center gap-2">
-                <select
-                  value={statusUpdates[r._id] || r.status}
-                  onChange={(e) =>
-                    setStatusUpdates({
-                      ...statusUpdates,
-                      [r._id]: e.target.value,
-                    })
-                  }
-                  className="border p-1 rounded"
-                >
-                  <option value="Open">Open</option>
-                  <option value="Acknowledged">Acknowledged</option>
-                  <option value="In Progress">In Progress</option>
-                  <option value="Resolved">Resolved</option>
-                </select>
-                <button
-                  onClick={() => handleStatusChange(r._id)}
-                  className="bg-blue-600 text-white px-2 py-1 rounded"
-                >
-                  Update
-                </button>
-              </div>
-            )}
-
-            {/* Admin or citizen see status read-only */}
-            {(userRole === "admin" || userRole === "citizen") && (
-              <p className="text-sm text-gray-700 mb-2">Status: {r.status}</p>
-            )}
-
-            {/* Media */}
-            {r.media && r.media.length > 0 && (
-              <div className="flex flex-wrap gap-2 mb-2">
-                {r.media.map((m, i) =>
-                  m.mime.startsWith("image/") ? (
-                    <a
-                      key={i}
-                      href={m.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                  <td className="p-2 font-semibold">{r.title}</td>
+                  <td>{r.category}</td>
+                  <td>{r.severity}</td>
+                  <td>
+                    <Badge
+                      className={`rounded-full px-2 py-1 ${
+                        statusColor[r.status] || "bg-gray-100 text-gray-700"
+                      }`}
                     >
-                      <img
-                        src={m.url}
-                        alt="report media"
-                        className="w-32 h-32 object-cover rounded border cursor-pointer hover:opacity-80"
-                      />
-                    </a>
-                  ) : (
-                    <video
-                      key={i}
-                      src={m.url}
-                      controls
-                      className="w-48 h-32 object-cover rounded border"
-                    />
-                  )
-                )}
-              </div>
-            )}
-
-            <Link to={`/reports/${r._id}`} className="text-blue-600 underline">
-              View Details
-            </Link>
-          </div>
-        );
-      })}
+                      {r.status}
+                    </Badge>
+                  </td>
+                  <td>
+                    {r.reporter?.name || "Unknown"} (
+                    {r.reporter?.email || "N/A"})
+                  </td>
+                  <td>
+                    {new Date(r.createdAt).toLocaleString(undefined, {
+                      dateStyle: "medium",
+                      timeStyle: "short",
+                    })}
+                  </td>
+                  <td className="space-x-2">
+                    <Link to={`/reports/${r._id}`}>
+                      <Button size="sm" variant="default">
+                        View
+                      </Button>
+                    </Link>
+                    {(userRole === "officer" || userRole === "admin") && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          alert(
+                            "Officer/Admin actions to update status can be implemented here"
+                          )
+                        }
+                      >
+                        Update
+                      </Button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

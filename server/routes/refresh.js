@@ -9,9 +9,9 @@ import User from "../models/User.js";
 
 const router = express.Router();
 
-// ======================
-// Refresh Access Token
-// ======================
+// -----------------------------
+// Refresh Access & Refresh Tokens
+// -----------------------------
 router.post("/", async (req, res) => {
   try {
     const { refreshToken } = req.body;
@@ -24,9 +24,13 @@ router.post("/", async (req, res) => {
         .status(401)
         .json({ message: "Invalid or expired refresh token" });
 
-    // Optional: verify user still exists
+    // Verify that user still exists and is not blocked
     const user = await User.findById(payload.userId);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user)
+      return res.status(404).json({ message: "User not found" });
+
+    if (user.blocked)
+      return res.status(403).json({ message: "User is blocked" });
 
     // Issue new tokens
     const newAccessToken = signAccessToken({
@@ -39,7 +43,7 @@ router.post("/", async (req, res) => {
     });
 
     res.json({
-      message: "Tokens refreshed",
+      message: "Tokens refreshed successfully",
       accessToken: newAccessToken,
       refreshToken: newRefreshToken,
     });

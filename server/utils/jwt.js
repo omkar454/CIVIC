@@ -1,12 +1,8 @@
-// utils/jwt.js
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
 
 dotenv.config();
 
-// ======================
-// JWT Secret from .env
-// ======================
 const { JWT_ACCESS_SECRET, JWT_REFRESH_SECRET } = process.env;
 
 if (!JWT_ACCESS_SECRET || !JWT_REFRESH_SECRET) {
@@ -15,38 +11,34 @@ if (!JWT_ACCESS_SECRET || !JWT_REFRESH_SECRET) {
   );
 }
 
-// ======================
-// Generate Access Token
-// ======================
+// Generate Access Token (short-lived)
 export function signAccessToken(payload) {
   return jwt.sign(payload, JWT_ACCESS_SECRET, { expiresIn: "15m" });
 }
 
-// ======================
-// Generate Refresh Token
-// ======================
+// Generate Refresh Token (long-lived)
 export function signRefreshToken(payload) {
   return jwt.sign(payload, JWT_REFRESH_SECRET, { expiresIn: "7d" });
 }
 
-// ======================
-// Verify Access Token
-// ======================
+// Verify Access Token (middleware-friendly)
 export function verifyAccessToken(token) {
+  if (!token || typeof token !== "string") return null;
   try {
     return jwt.verify(token, JWT_ACCESS_SECRET);
   } catch (err) {
-    return null; // returns null if token invalid/expired
+    console.warn("Access token verification failed:", err.message);
+    return null;
   }
 }
 
-// ======================
 // Verify Refresh Token
-// ======================
 export function verifyRefreshToken(token) {
+  if (!token || typeof token !== "string") return null;
   try {
     return jwt.verify(token, JWT_REFRESH_SECRET);
   } catch (err) {
+    console.warn("Refresh token verification failed:", err.message);
     return null;
   }
 }

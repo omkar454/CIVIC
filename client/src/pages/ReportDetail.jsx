@@ -1,326 +1,334 @@
-// pages/ReportDetail.jsx
-import { useEffect, useState } from "react";
+// src/pages/ReportDetail.jsx
+import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import axios from "axios";
+import { Button } from "../components/ui/button";
+import { Badge } from "../components/ui/badge";
+import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import L from "leaflet";
+
+// Red marker for report
+const redIcon = new L.Icon({
+  iconUrl:
+    "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
+  shadowUrl:
+    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+});
 
 export default function ReportDetail() {
   const { id } = useParams();
   const [report, setReport] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [commentText, setCommentText] = useState("");
-  const [replyText, setReplyText] = useState({});
-  const [newStatus, setNewStatus] = useState("");
-  const [statusNote, setStatusNote] = useState("");
-  const [loading, setLoading] = useState({
-    vote: false,
-    comment: false,
-    reply: {},
-    status: false,
-  });
-
+  const role = localStorage.getItem("role");
+  const userId = localStorage.getItem("userId");
+  const userDept = localStorage.getItem("department");
   const token = localStorage.getItem("accessToken");
-  const userRole = localStorage.getItem("role");
-  const currentUserId = localStorage.getItem("userId");
 
-  // Fetch report details
+  // ------------------ Fetch Report ------------------
   const fetchReport = async () => {
-    if (!token) {
-      alert("Please login first!");
-      return;
-    }
+    setLoading(true);
     try {
       const res = await axios.get(`http://localhost:5000/api/reports/${id}`, {
-        headers: {
-          Authorization: "Bearer " + token, // ✅ token added
-        },
+        headers: { Authorization: `Bearer ${token}` },
       });
-      const rpt = res.data;
-      rpt.status = rpt.status || "Open";
-      rpt.votes = rpt.votes || 0;
-      rpt.reporter = rpt.reporter || { _id: "", name: "Unknown", email: "N/A" };
-      rpt.voters = rpt.voters || [];
-      rpt.comments = rpt.comments || [];
-      rpt.statusHistory = rpt.statusHistory || [];
-      setReport(rpt);
-      setNewStatus(rpt.status);
+      setReport(res.data);
     } catch (err) {
-      console.error("Failed to fetch report:", err);
-      alert(err.response?.data?.message || "Failed to load report");
+      console.error("Fetch report error:", err);
+      alert("Failed to fetch report details");
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
     fetchReport();
-  }, [id, token]);
+  }, [id]);
 
-  if (!report) return <p className="text-center mt-8">Loading report...</p>;
+  useEffect(() => {
+    if (report) {
+      console.log("ROLE:", role);
+      console.log("USER DEPARTMENT:", userDept);
+      console.log("REPORT DEPARTMENT:", report.department);
+      console.log("REPORT CATEGORY:", report.category);
+    }
+  }, [report]);
 
-  const hasVoted = report.voters.includes(currentUserId);
-  const isReporter = report.reporter._id === currentUserId;
 
-  // Citizen upvote
-  const handleVote = async () => {
-    if (!token) return alert("Login first!");
-    setLoading((prev) => ({ ...prev, vote: true }));
+  // ------------------ Voting ------------------
+  const voteReport = async () => {
     try {
       await axios.post(
         `http://localhost:5000/api/votesComments/${id}/vote`,
         {},
-        { headers: { Authorization: "Bearer " + token } }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
       fetchReport();
     } catch (err) {
-      alert(err.response?.data?.message || "Failed to vote");
-    } finally {
-      setLoading((prev) => ({ ...prev, vote: false }));
+      console.error("Vote error:", err);
+      alert(err.response?.data?.message || "Vote failed");
     }
   };
 
-  // Citizen add comment
-  const handleComment = async (e) => {
-    e.preventDefault();
-    if (!token) return alert("Login first!");
-    setLoading((prev) => ({ ...prev, comment: true }));
+  // ------------------ Add Comment ------------------
+  const addComment = async () => {
+    if (!commentText) return;
     try {
       await axios.post(
         `http://localhost:5000/api/votesComments/${id}/comment`,
         { message: commentText },
-        { headers: { Authorization: "Bearer " + token } }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
       setCommentText("");
       fetchReport();
     } catch (err) {
-      alert(err.response?.data?.message || "Failed to post comment");
-    } finally {
-      setLoading((prev) => ({ ...prev, comment: false }));
+      console.error("Add comment error:", err);
+      alert(err.response?.data?.message || "Failed to add comment");
     }
   };
 
-  // Officer reply to comment
-  const handleReply = async (e, commentId) => {
-    e.preventDefault();
-    if (!token || userRole !== "officer")
-      return alert("Only officers can reply!");
-    setLoading((prev) => ({
-      ...prev,
-      reply: { ...prev.reply, [commentId]: true },
-    }));
-
+  // ------------------ Reply ------------------
+  const replyToComment = async (commentId, replyText) => {
+    if (!replyText) return;
     try {
       await axios.post(
         `http://localhost:5000/api/votesComments/${id}/reply/${commentId}`,
-        { reply: replyText[commentId] },
-        { headers: { Authorization: "Bearer " + token } }
+        { reply: replyText },
+        { headers: { Authorization: `Bearer ${token}` } }
       );
-      setReplyText({ ...replyText, [commentId]: "" });
       fetchReport();
     } catch (err) {
+      console.error("Reply error:", err);
       alert(err.response?.data?.message || "Failed to reply");
-    } finally {
-      setLoading((prev) => ({
-        ...prev,
-        reply: { ...prev.reply, [commentId]: false },
-      }));
     }
   };
 
-  // Officer-only status update
-  const handleStatusUpdate = async () => {
-    if (!token || userRole !== "officer")
-      return alert("Only officers can update status!");
-    setLoading((prev) => ({ ...prev, status: true }));
+  // ------------------ Status Update ------------------
+  const updateStatus = async (status) => {
     try {
       await axios.post(
         `http://localhost:5000/api/reports/${id}/status`,
-        { status: newStatus, note: statusNote },
-        { headers: { Authorization: "Bearer " + token } }
+        { status },
+        { headers: { Authorization: `Bearer ${token}` } }
       );
-      setStatusNote("");
       fetchReport();
     } catch (err) {
-      alert(err.response?.data?.message || "Failed to update status");
-    } finally {
-      setLoading((prev) => ({ ...prev, status: false }));
+      console.error("Status update error:", err);
+      alert(err.response?.data?.message || "Status update failed");
     }
   };
 
+  // ------------------ UI Conditions ------------------
+  if (loading)
+    return (
+      <p className="text-center mt-10 text-lg text-gray-500">
+        Loading report...
+      </p>
+    );
+
+  if (!report)
+    return (
+      <p className="text-center mt-10 text-lg text-gray-500">
+        Report not found
+      </p>
+    );
+
+  const statusColor = {
+    Open: "bg-red-100 text-red-700",
+    Acknowledged: "bg-yellow-100 text-yellow-700",
+    "In Progress": "bg-blue-100 text-blue-700",
+    Resolved: "bg-green-100 text-green-700",
+  };
+
+  // Access control logic
+  const canVote = role === "citizen" && report.reporter?._id !== userId;
+  const canComment = role === "citizen";
+  const normalize = (str) => str?.trim().toLowerCase();
+  const canReply =
+    role === "officer" &&
+    (normalize(report.department) === normalize(userDept) ||
+      normalize(report.category) === normalize(userDept));
+
+  const canUpdateStatus =
+    role === "officer" &&
+    (normalize(report.department) === normalize(userDept) ||
+      normalize(report.category) === normalize(userDept));
+
+
   return (
-    <div className="max-w-2xl mx-auto bg-white shadow p-4 rounded">
-      <h2 className="text-xl font-bold mb-2">{report.title}</h2>
-      <p className="mb-2">{report.description}</p>
-      <p className="text-sm text-gray-600 mb-2">
-        Category: {report.category} | Severity: {report.severity}
-      </p>
-      <p className="text-sm mb-2">Status: {report.status}</p>
-      <p className="text-xs text-gray-500 mb-4">
-        Reported by: {report.reporter.name} ({report.reporter.email})
-      </p>
+    <div className="max-w-5xl mx-auto p-4 space-y-6">
+      {/* Report Details */}
+      <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6 space-y-4">
+        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2">
+          <h1 className="text-3xl font-bold text-blue-700 dark:text-blue-400">
+            {report.title}
+          </h1>
+          <Badge
+            className={`rounded-full px-3 py-1 ${
+              statusColor[report.status] || "bg-gray-100 text-gray-700"
+            }`}
+          >
+            {report.status}
+          </Badge>
+        </div>
+
+        <p className="text-gray-700 dark:text-gray-300">{report.description}</p>
+        <p className="text-sm text-gray-500">
+          Reported by: {report.reporter?.name || "Unknown"} (
+          {report.reporter?.email || "N/A"}) |{" "}
+          {new Date(report.createdAt).toLocaleString()}
+        </p>
+        <p className="text-sm text-gray-500">
+          Department: {report.department || "N/A"} | Category:{" "}
+          {report.category || "N/A"}
+        </p>
+
+        {/* Voting */}
+        {canVote && (
+          <Button
+            onClick={voteReport}
+            className="bg-blue-600 hover:bg-blue-700 text-white mt-2"
+          >
+            Upvote ({report.votes || 0})
+          </Button>
+        )}
+        {!canVote && role === "citizen" && (
+          <p className="text-gray-500 mt-2">
+            You cannot vote on your own report.
+          </p>
+        )}
+      </div>
 
       {/* Media */}
-      {report.media.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-4">
-          {report.media.map((m, i) =>
-            m.mime.startsWith("image/") ? (
-              <a
-                key={i}
-                href={m.url}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
+      {report.media?.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3">
+          <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
+            Media
+          </h2>
+          <div className="flex flex-wrap gap-3">
+            {report.media.map((m, i) =>
+              m.mime.startsWith("image/") ? (
                 <img
+                  key={i}
                   src={m.url}
-                  alt="media"
-                  className="w-48 h-48 object-cover rounded border cursor-pointer hover:opacity-80"
+                  alt="report media"
+                  className="w-48 h-48 object-cover rounded border cursor-pointer hover:scale-105 transition"
+                  onClick={() => window.open(m.url, "_blank")}
                 />
-              </a>
-            ) : (
-              <video
-                key={i}
-                src={m.url}
-                controls
-                className="w-64 h-48 object-cover rounded border"
-              />
-            )
+              ) : (
+                <video
+                  key={i}
+                  src={m.url}
+                  controls
+                  className="w-64 h-48 object-cover rounded border"
+                />
+              )
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Map */}
+      <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl overflow-hidden">
+        <MapContainer
+          center={[report.lat, report.lng]}
+          zoom={16}
+          style={{ height: "400px", width: "100%" }}
+        >
+          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+          <Marker position={[report.lat, report.lng]} icon={redIcon}>
+            <Popup>{report.title}</Popup>
+          </Marker>
+        </MapContainer>
+      </div>
+
+      {/* Officer Status Controls */}
+      {canUpdateStatus && report.status !== "Resolved" && (
+        <div className="flex gap-2">
+          {["Open", "Acknowledged", "In Progress", "Resolved"].map(
+            (st) =>
+              st !== report.status && (
+                <Button
+                  key={st}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                  onClick={() => updateStatus(st)}
+                >
+                  Mark as {st}
+                </Button>
+              )
           )}
         </div>
       )}
 
-      {/* Upvote (Citizen only) */}
-      {userRole === "citizen" && (
-        <div className="mb-4">
-          <button
-            onClick={handleVote}
-            disabled={hasVoted || isReporter || loading.vote}
-            className={`px-4 py-2 rounded mr-2 ${
-              hasVoted || isReporter ? "bg-gray-400" : "bg-green-600 text-white"
-            }`}
-          >
-            {loading.vote
-              ? "Voting..."
-              : hasVoted
-              ? `Voted (${report.votes})`
-              : isReporter
-              ? `Cannot vote your own report (${report.votes})`
-              : `Upvote (${report.votes})`}
-          </button>
-        </div>
-      )}
-
-      {/* Q&A Section */}
-      <div className="mb-4">
-        <h3 className="font-semibold mb-2">Q&A</h3>
-        {report.comments.length > 0 ? (
-          <ul className="space-y-2 mb-2">
-            {report.comments.map((c) => (
-              <li key={c._id} className="border p-2 rounded">
-                <p>
-                  <strong>Citizen:</strong> {c.message}
+      {/* Comments */}
+      <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3">
+        <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
+          Comments
+        </h2>
+        <div className="space-y-2">
+          {report.comments?.length > 0 ? (
+            report.comments.map((c) => (
+              <div
+                key={c._id}
+                className="p-3 bg-gray-100 dark:bg-gray-700 rounded shadow-sm"
+              >
+                <p className="text-gray-700 dark:text-gray-300">{c.message}</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                  {c.by?.name || "Citizen"} |{" "}
+                  {new Date(c.createdAt).toLocaleString()}
                 </p>
+
                 {c.reply && (
-                  <p className="text-blue-600 mt-1">
-                    <strong>Authority:</strong> {c.reply}
+                  <p className="mt-1 pl-4 border-l-2 border-gray-300 text-gray-600 dark:text-gray-400">
+                    Reply by {c.repliedBy?.name}: {c.reply}
                   </p>
                 )}
 
-                {/* Officer reply input only */}
-                {userRole === "officer" && !c.reply && (
-                  <form
-                    onSubmit={(e) => handleReply(e, c._id)}
-                    className="flex gap-2 mt-1"
-                  >
+                {/* Officer reply input */}
+                {canReply && !c.reply && (
+                  <div className="mt-1 flex gap-2">
                     <input
                       type="text"
-                      className="border p-1 flex-1 rounded"
-                      placeholder="Reply..."
-                      value={replyText[c._id] || ""}
-                      onChange={(e) =>
-                        setReplyText({ ...replyText, [c._id]: e.target.value })
-                      }
-                      required
+                      placeholder="Write a reply..."
+                      className="flex-1 border p-1 rounded"
+                      onChange={(e) => (c.replyTemp = e.target.value)}
                     />
-                    <button
-                      className="bg-blue-600 text-white px-2 rounded"
-                      disabled={loading.reply[c._id]}
+                    <Button
+                      onClick={() => replyToComment(c._id, c.replyTemp)}
+                      className="bg-purple-600 hover:bg-purple-700 text-white"
                     >
-                      {loading.reply[c._id] ? "Replying..." : "Reply"}
-                    </button>
-                  </form>
+                      Reply
+                    </Button>
+                  </div>
                 )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-gray-500 mb-2">No questions yet.</p>
-        )}
+              </div>
+            ))
+          ) : (
+            <p className="text-gray-500">No comments yet.</p>
+          )}
+        </div>
 
-        {/* Citizen add question */}
-        {userRole === "citizen" && (
-          <form onSubmit={handleComment} className="flex gap-2">
+        {/* Citizen comment input */}
+        {canComment && (
+          <div className="mt-3 flex gap-2">
             <input
               type="text"
-              className="border p-2 flex-1 rounded"
-              placeholder="Ask a question..."
+              placeholder="Write a comment..."
               value={commentText}
               onChange={(e) => setCommentText(e.target.value)}
-              required
+              className="flex-1 border p-2 rounded focus:outline-none focus:ring focus:ring-blue-400 dark:bg-gray-800 dark:text-white"
             />
-            <button
-              className="bg-blue-600 text-white px-4 py-2 rounded"
-              disabled={loading.comment}
+            <Button
+              onClick={addComment}
+              className="bg-green-600 hover:bg-green-700 text-white"
             >
-              {loading.comment ? "Submitting..." : "Submit"}
-            </button>
-          </form>
+              Add Comment
+            </Button>
+          </div>
         )}
       </div>
-
-      {/* Officer-only: Status Update */}
-      {userRole === "officer" && (
-        <div className="mt-4 p-2 border rounded bg-gray-50">
-          <h3 className="font-semibold mb-2">Update Status</h3>
-
-          <select
-            className="border p-2 mb-2 w-full"
-            value={newStatus}
-            onChange={(e) => setNewStatus(e.target.value)}
-          >
-            <option value="Open">Open</option>
-            <option value="Acknowledged">Acknowledged</option>
-            <option value="In Progress">In Progress</option>
-            <option value="Resolved">Resolved</option>
-          </select>
-
-          <textarea
-            className="border w-full p-2 mb-2"
-            placeholder="Optional note"
-            value={statusNote}
-            onChange={(e) => setStatusNote(e.target.value)}
-          />
-
-          <button
-            onClick={handleStatusUpdate}
-            className="bg-blue-600 text-white px-4 py-2 rounded"
-            disabled={loading.status}
-          >
-            {loading.status ? "Updating..." : "Update Status"}
-          </button>
-        </div>
-      )}
-
-      {/* Status History (all roles can view) */}
-      {report.statusHistory.length > 0 && (
-        <div className="mt-4">
-          <h3 className="font-semibold mb-2">Status History</h3>
-          <ul className="list-disc list-inside">
-            {report.statusHistory.map((s, idx) => (
-              <li key={idx} className="text-sm text-gray-700">
-                {s.status} by {s.by?.name || "Unknown"} on{" "}
-                {new Date(s.at).toLocaleString()}
-                {s.note && ` — Note: ${s.note}`}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
     </div>
   );
 }

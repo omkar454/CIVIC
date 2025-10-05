@@ -1,89 +1,73 @@
+// models/Report.js
 import mongoose from "mongoose";
 
 const ReportSchema = new mongoose.Schema(
   {
-    title: {
-      type: String,
-      required: [true, "Title is required"],
-      trim: true,
-    },
-    description: {
-      type: String,
-      required: [true, "Description is required"],
-    },
+    title: { type: String, required: true, trim: true },
+    description: { type: String, required: true, trim: true },
     category: {
       type: String,
-      required: [true, "Category is required"],
-      trim: true,
+      required: true,
+      enum: [
+        "pothole",
+        "garbage",
+        "streetlight",
+        "water-logging",
+        "toilet",
+        "water-supply",
+        "drainage",
+        "waste-management",
+        "park",
+        "other",
+      ],
     },
-    severity: {
-      type: Number,
-      min: 1,
-      max: 5,
-      default: 3,
-    },
-
-    // Geo location
+    severity: { type: Number, min: 1, max: 5, default: 3 },
+    department: { type: String, default: "general" },
+    assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     location: {
-      type: {
-        type: String,
-        enum: ["Point"],
-        default: "Point",
-      },
+      type: { type: String, enum: ["Point"], default: "Point" },
       coordinates: {
-        type: [Number], // [lng, lat]
+        type: [Number],
         required: true,
+        validate: {
+          validator: function (v) {
+            return v.length === 2;
+          },
+          message: "Location must have [longitude, latitude]",
+        },
       },
     },
-
-    // Media (images/videos)
-    media: [
-      {
-        url: { type: String, required: true },
-        mime: { type: String, required: true },
-      },
-    ],
-
-    // Voting (citizens only)
+    media: [{ url: { type: String }, mime: { type: String } }],
     votes: { type: Number, default: 0 },
     voters: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-
-    // Reporter (citizen who created the report)
     reporter: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
-
-    // Current Status
     status: {
       type: String,
       enum: ["Open", "Acknowledged", "In Progress", "Resolved"],
       default: "Open",
     },
-
-    // Status History
     statusHistory: [
       {
-        status: {
-          type: String,
-          enum: ["Open", "Acknowledged", "In Progress", "Resolved"],
-        },
-        by: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // officer/admin
-        note: String,
+        status: { type: String, required: true },
+        by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        note: { type: String, default: "" },
         at: { type: Date, default: Date.now },
       },
     ],
-
-    // Priority (for officer/admin queue)
     priorityScore: { type: Number, default: 0 },
-
-    // Q&A (citizen questions + officer/admin replies)
     comments: [
       {
-        message: { type: String, required: true }, // citizen question
-        by: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // citizen
-        reply: String, // officer/admin reply
+        message: { type: String, required: true },
+        by: {
+          type: mongoose.Schema.Types.ObjectId,
+          ref: "User",
+          required: true,
+        },
+        reply: { type: String, default: "" },
         repliedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
         createdAt: { type: Date, default: Date.now },
       },
@@ -92,7 +76,19 @@ const ReportSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Geo index for location-based queries
+// -----------------------------
+// Geo index
+// -----------------------------
 ReportSchema.index({ location: "2dsphere" });
+
+// -----------------------------
+// Pre-save hook to calculate priority
+// -----------------------------
+ReportSchema.pre("save", function (next) {
+  const severity = this.severity || 3;
+  const votes = this.votes || 0;
+  this.priorityScore = severity * 10 + votes * 5;
+  next();
+});
 
 export default mongoose.model("Report", ReportSchema);
