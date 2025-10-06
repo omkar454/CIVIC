@@ -24,27 +24,56 @@ const ReportSchema = new mongoose.Schema(
     severity: { type: Number, min: 1, max: 5, default: 3 },
     department: { type: String, default: "general" },
     assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+
+    // -----------------------------
+    // Location (optional coordinates)
+    // -----------------------------
     location: {
       type: { type: String, enum: ["Point"], default: "Point" },
       coordinates: {
         type: [Number],
-        required: true,
+        required: function () {
+          // coordinates required only if address not provided
+          return !this.address || this.address.trim() === "";
+        },
         validate: {
           validator: function (v) {
-            return v.length === 2;
+            // if coordinates are provided, ensure exactly [lng, lat]
+            return !v || v.length === 2;
           },
           message: "Location must have [longitude, latitude]",
         },
       },
     },
+
+    // -----------------------------
+    // Optional address field
+    // -----------------------------
+    address: { type: String, trim: true, default: "" },
+
+    // -----------------------------
+    // Media attachments
+    // -----------------------------
     media: [{ url: { type: String }, mime: { type: String } }],
+
+    // -----------------------------
+    // Voting system
+    // -----------------------------
     votes: { type: Number, default: 0 },
     voters: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+
+    // -----------------------------
+    // Reporter info
+    // -----------------------------
     reporter: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
+
+    // -----------------------------
+    // Status tracking
+    // -----------------------------
     status: {
       type: String,
       enum: ["Open", "Acknowledged", "In Progress", "Resolved"],
@@ -58,7 +87,10 @@ const ReportSchema = new mongoose.Schema(
         at: { type: Date, default: Date.now },
       },
     ],
-    priorityScore: { type: Number, default: 0 },
+
+    // -----------------------------
+    // Comments (citizen ↔ officer Q&A)
+    // -----------------------------
     comments: [
       {
         message: { type: String, required: true },
@@ -72,12 +104,17 @@ const ReportSchema = new mongoose.Schema(
         createdAt: { type: Date, default: Date.now },
       },
     ],
+
+    // -----------------------------
+    // Priority calculation
+    // -----------------------------
+    priorityScore: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
 
 // -----------------------------
-// Geo index
+// Geo index for location search
 // -----------------------------
 ReportSchema.index({ location: "2dsphere" });
 

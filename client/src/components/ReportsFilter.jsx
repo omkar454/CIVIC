@@ -1,61 +1,165 @@
 // src/components/ReportsFilter.jsx
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { Button } from "./ui/button";
 
 export default function ReportsFilter({ onFilter }) {
-  const [category, setCategory] = useState("");
-  const [status, setStatus] = useState("");
+  const [filters, setFilters] = useState({
+    category: "",
+    status: "",
+    severity: "",
+    from: "",
+    to: "",
+    myReports: "false",
+  });
 
-  const handleFilterChange = () => {
-    onFilter({ category, status });
+  const categories = [
+    "pothole",
+    "garbage",
+    "streetlight",
+    "water-logging",
+    "toilet",
+    "water-supply",
+    "drainage",
+    "waste-management",
+    "park",
+    "other",
+  ];
+
+  const statuses = ["Open", "Acknowledged", "In Progress", "Resolved"];
+  const severities = [1, 2, 3, 4, 5];
+
+  // Whenever filters change, notify parent
+  useEffect(() => {
+    onFilter(filters);
+  }, [filters]);
+
+  const handleChange = (key, value) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleReset = () => {
+    const resetFilters = {
+      category: "",
+      status: "",
+      severity: "",
+      from: "",
+      to: "",
+      myReports: "false",
+    };
+    setFilters(resetFilters);
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 flex flex-col md:flex-row gap-4 items-end">
-      {/* Category Filter */}
+    <div className="bg-white dark:bg-gray-800 p-4 rounded shadow space-y-3 flex flex-col md:flex-row md:items-end md:space-x-3">
+      {/* My Reports / All Reports */}
       <div className="flex flex-col">
-        <label className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+        <label className="text-sm font-medium mb-1 dark:text-gray-300">
+          Reports
+        </label>
+        <select
+          value={filters.myReports}
+          onChange={(e) => handleChange("myReports", e.target.value)}
+          className="border px-2 py-1 rounded dark:bg-gray-700 dark:text-white"
+        >
+          <option value="false">All Reports</option>
+          <option value="true">My Reports</option>
+        </select>
+      </div>
+
+      {/* Category */}
+      <div className="flex flex-col">
+        <label className="text-sm font-medium mb-1 dark:text-gray-300">
           Category
         </label>
         <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="border rounded px-3 py-2 focus:outline-none focus:ring focus:ring-blue-400 dark:bg-gray-700 dark:text-white"
+          value={filters.category}
+          onChange={(e) => handleChange("category", e.target.value)}
+          className="border px-2 py-1 rounded dark:bg-gray-700 dark:text-white"
         >
-          <option value="">All Categories</option>
-          <option value="pothole">Pothole</option>
-          <option value="garbage">Garbage</option>
-          <option value="streetlight">Streetlight</option>
-          <option value="waterlogging">Water Logging</option>
-          <option value="toilet">Public Toilet</option>
-          <option value="other">Other</option>
+          <option value="">All</option>
+          {categories.map((c) => (
+            <option key={c} value={c}>
+              {c.charAt(0).toUpperCase() + c.slice(1)}
+            </option>
+          ))}
         </select>
       </div>
 
-      {/* Status Filter */}
+      {/* Status */}
       <div className="flex flex-col">
-        <label className="text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+        <label className="text-sm font-medium mb-1 dark:text-gray-300">
           Status
         </label>
         <select
-          value={status}
-          onChange={(e) => setStatus(e.target.value)}
-          className="border rounded px-3 py-2 focus:outline-none focus:ring focus:ring-blue-400 dark:bg-gray-700 dark:text-white"
+          value={filters.status}
+          onChange={(e) => handleChange("status", e.target.value)}
+          className="border px-2 py-1 rounded dark:bg-gray-700 dark:text-white"
         >
-          <option value="">All Statuses</option>
-          <option value="Open">Open</option>
-          <option value="Acknowledged">Acknowledged</option>
-          <option value="In Progress">In Progress</option>
-          <option value="Resolved">Resolved</option>
+          <option value="">All</option>
+          {statuses.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
         </select>
       </div>
 
-      {/* Apply Button */}
-      <button
-        onClick={handleFilterChange}
-        className="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded shadow transition"
-      >
-        Apply
-      </button>
+      {/* Severity */}
+      <div className="flex flex-col">
+        <label className="text-sm font-medium mb-1 dark:text-gray-300">
+          Severity
+        </label>
+        <select
+          value={filters.severity}
+          onChange={(e) => handleChange("severity", e.target.value)}
+          className="border px-2 py-1 rounded dark:bg-gray-700 dark:text-white"
+        >
+          <option value="">All</option>
+          {severities.map((s) => (
+            <option key={s} value={s}>
+              {s}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {/* From Date */}
+      <div className="flex flex-col">
+        <label className="text-sm font-medium mb-1 dark:text-gray-300">
+          From
+        </label>
+        <input
+          type="date"
+          value={filters.from}
+          onChange={(e) => handleChange("from", e.target.value)}
+          className="border px-2 py-1 rounded dark:bg-gray-700 dark:text-white"
+        />
+      </div>
+
+      {/* To Date */}
+      <div className="flex flex-col">
+        <label className="text-sm font-medium mb-1 dark:text-gray-300">
+          To
+        </label>
+        <input
+          type="date"
+          value={filters.to}
+          onChange={(e) => handleChange("to", e.target.value)}
+          className="border px-2 py-1 rounded dark:bg-gray-700 dark:text-white"
+        />
+      </div>
+
+      {/* Reset Button */}
+      <div className="flex items-end">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={handleReset}
+          className="mt-1"
+        >
+          Reset
+        </Button>
+      </div>
     </div>
   );
 }

@@ -232,11 +232,55 @@ export default function Home() {
               <BarChart data={severityData}>
                 <XAxis dataKey="severity" />
                 <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="count" fill="#0088FE" />
+                <Tooltip
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const entry = payload[0].payload;
+                      return (
+                        <div className="bg-white dark:bg-gray-700 p-2 rounded shadow text-sm text-gray-800 dark:text-gray-100">
+                          <p>Severity Level: {entry.severity}</p>
+                          <p>Count: {entry.count}</p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
+                />
+                <Bar dataKey="count">
+                  {severityData.map((entry, index) => {
+                    let color = "#66BB6A"; // 1 - green (safe)
+                    if (entry.severity === 2) color = "#C0CA33"; // 2 - lime
+                    else if (entry.severity === 3)
+                      color = "#FB8C00"; // 3 - orange
+                    else if (entry.severity === 4)
+                      color = "#F4511E"; // 4 - deep orange
+                    else if (entry.severity === 5) color = "#B71C1C"; // 5 - dark red
+                    return <Cell key={`cell-${index}`} fill={color} />;
+                  })}
+                </Bar>
               </BarChart>
             </ResponsiveContainer>
+
+            {/* ✅ Custom legend below chart */}
+            <div className="flex justify-center gap-4 mt-4 flex-wrap">
+              {[
+                { level: 1, color: "#66BB6A" },
+                { level: 2, color: "#C0CA33" },
+                { level: 3, color: "#FB8C00" },
+                { level: 4, color: "#F4511E" },
+                { level: 5, color: "#B71C1C" },
+              ].map(({ level, color }) => (
+                <div key={level} className="flex items-center gap-2">
+                  <div
+                    className="w-4 h-4 rounded"
+                    style={{ backgroundColor: color }}
+                  ></div>
+                  <span className="text-sm text-gray-700 dark:text-gray-300">
+                    Severity {level}
+                  </span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>

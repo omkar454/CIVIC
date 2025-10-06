@@ -105,17 +105,18 @@ router.get("/officer-queue", auth(["officer", "admin"]), async (req, res) => {
   }
 });
 
-// -----------------------------
 // List reports (all roles)
-// -----------------------------
 router.get("/", auth(), async (req, res) => {
   try {
     const {
       category,
       status,
-      department,
-      search,
       severity,
+      from,
+      to,
+      reporter, // for "myReports" filter
+      search,
+      department,
       lat,
       lng,
       radius = 500,
@@ -124,11 +125,30 @@ router.get("/", auth(), async (req, res) => {
     } = req.query;
 
     const filter = {};
+
+    // Category / Status / Severity
     if (category) filter.category = category;
     if (status) filter.status = status;
-    if (department) filter.department = department;
     if (severity) filter.severity = parseInt(severity);
 
+    // From / To date
+    if (from || to) {
+      filter.createdAt = {};
+      if (from) filter.createdAt.$gte = new Date(from);
+      if (to) filter.createdAt.$lte = new Date(to);
+    }
+
+    // My Reports (citizen)
+    if (reporter && req.user.role === "citizen") {
+      filter.reporter = reporter;
+    }
+
+    // Officers only see their department
+    if (req.user.role === "officer") {
+      filter.department = req.user.department;
+    }
+
+    // Search
     if (search) {
       filter.$or = [
         { title: new RegExp(search, "i") },
@@ -136,6 +156,7 @@ router.get("/", auth(), async (req, res) => {
       ];
     }
 
+    // Geo filter (optional)
     if (lat && lng) {
       const latNum = parseFloat(lat);
       const lngNum = parseFloat(lng);
@@ -173,6 +194,8 @@ router.get("/", auth(), async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+
 
 // -----------------------------
 // Get report details

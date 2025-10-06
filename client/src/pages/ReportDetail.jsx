@@ -22,6 +22,7 @@ export default function ReportDetail() {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [commentText, setCommentText] = useState("");
+  const [address, setAddress] = useState("");
   const role = localStorage.getItem("role");
   const userId = localStorage.getItem("userId");
   const userDept = localStorage.getItem("department");
@@ -35,6 +36,14 @@ export default function ReportDetail() {
         headers: { Authorization: `Bearer ${token}` },
       });
       setReport(res.data);
+
+      // Reverse geocoding for human-readable address
+      if (res.data.lat && res.data.lng) {
+        const geoRes = await axios.get(
+          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${res.data.lat}&lon=${res.data.lng}`
+        );
+        setAddress(geoRes.data.display_name || "");
+      }
     } catch (err) {
       console.error("Fetch report error:", err);
       alert("Failed to fetch report details");
@@ -46,16 +55,6 @@ export default function ReportDetail() {
   useEffect(() => {
     fetchReport();
   }, [id]);
-
-  useEffect(() => {
-    if (report) {
-      console.log("ROLE:", role);
-      console.log("USER DEPARTMENT:", userDept);
-      console.log("REPORT DEPARTMENT:", report.department);
-      console.log("REPORT CATEGORY:", report.category);
-    }
-  }, [report]);
-
 
   // ------------------ Voting ------------------
   const voteReport = async () => {
@@ -142,7 +141,6 @@ export default function ReportDetail() {
     Resolved: "bg-green-100 text-green-700",
   };
 
-  // Access control logic
   const canVote = role === "citizen" && report.reporter?._id !== userId;
   const canComment = role === "citizen";
   const normalize = (str) => str?.trim().toLowerCase();
@@ -155,7 +153,6 @@ export default function ReportDetail() {
     role === "officer" &&
     (normalize(report.department) === normalize(userDept) ||
       normalize(report.category) === normalize(userDept));
-
 
   return (
     <div className="max-w-5xl mx-auto p-4 space-y-6">
@@ -239,9 +236,45 @@ export default function ReportDetail() {
         >
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
           <Marker position={[report.lat, report.lng]} icon={redIcon}>
-            <Popup>{report.title}</Popup>
+            <Popup>
+              <div className="space-y-1">
+                <p className="font-semibold">{report.title}</p>
+                <p>Category: {report.category}</p>
+                <p>Severity: {report.severity}</p>
+                <p>Reported by: {report.reporter?.name}</p>
+                <p>Created at: {new Date(report.createdAt).toLocaleString()}</p>
+                <p>
+                  Coordinates: Lat {report.lat.toFixed(6)}, Lng{" "}
+                  {report.lng.toFixed(6)}
+                </p>
+                {address && <p>Address: {address}</p>}
+              </div>
+            </Popup>
           </Marker>
         </MapContainer>
+
+        {/* Info below map */}
+        <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-1">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Coordinates: Lat {report.lat.toFixed(6)}, Lng{" "}
+            {report.lng.toFixed(6)}
+          </p>
+          {address && (
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Address: {address}
+            </p>
+          )}
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Reported by: {report.reporter?.name || "Unknown"} (
+            {report.reporter?.email || "N/A"})
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Category: {report.category || "N/A"} | Severity: {report.severity}
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Created at: {new Date(report.createdAt).toLocaleString()}
+          </p>
+        </div>
       </div>
 
       {/* Officer Status Controls */}

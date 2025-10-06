@@ -13,19 +13,15 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB per file
   fileFilter: (req, file, cb) => {
-    const allowedTypes = ["image/jpeg", "image/png", "video/mp4"];
-    if (allowedTypes.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error("Only JPEG, PNG images and MP4 videos are allowed"));
-    }
+    // Allow all types
+    cb(null, true);
   },
 });
 
 // -----------------------------
 // Upload media
 // -----------------------------
-router.post("/", auth(), upload.array("media", 5), async (req, res) => {
+router.post("/", auth(), upload.array("media"), async (req, res) => {
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ message: "No files uploaded" });
   }
@@ -38,7 +34,7 @@ router.post("/", auth(), upload.array("media", 5), async (req, res) => {
       const dataURI = `data:${file.mimetype};base64,${base64}`;
 
       const result = await cloudinary.uploader.upload(dataURI, {
-        resource_type: "auto",
+        resource_type: "auto", // auto-detect type
         folder: "civic-reports",
       });
 

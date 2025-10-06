@@ -14,24 +14,42 @@ export default function ReportLists({ darkMode }) {
 
   const token = localStorage.getItem("accessToken");
   const userRole = localStorage.getItem("role");
-  const userDepartment = localStorage.getItem("department"); // department stored during login
+  const userDepartment = localStorage.getItem("department");
 
   const fetchReports = async () => {
     setLoading(true);
     try {
-      const queryObj = { ...filters };
+      const queryObj = {};
 
-      // Only officers get department-specific reports
+      // Add category, status, severity from filters
+      if (filters.category) queryObj.category = filters.category;
+      if (filters.status) queryObj.status = filters.status;
+      if (filters.severity) queryObj.severity = filters.severity;
+
+      // Add from/to date
+      if (filters.from || filters.to) {
+        queryObj.from = filters.from || undefined;
+        queryObj.to = filters.to || undefined;
+      }
+
+      // Add myReports filter (for citizens)
+      if (filters.myReports === "true" && userRole === "citizen") {
+        queryObj.reporter = localStorage.getItem("userId"); // assuming you store userId on login
+      }
+
+      // Officers only see their department reports
       if (userRole === "officer" && userDepartment) {
         queryObj.department = userDepartment;
       }
 
+      // Search term
       if (search) queryObj.search = search;
 
       const query = new URLSearchParams(queryObj).toString();
       const res = await API.get(`/reports?${query}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
+
       setReports(res.data.reports || []);
     } catch (err) {
       console.error("Failed to fetch reports:", err);
@@ -40,6 +58,7 @@ export default function ReportLists({ darkMode }) {
       setLoading(false);
     }
   };
+
 
   useEffect(() => {
     fetchReports();
@@ -60,7 +79,14 @@ export default function ReportLists({ darkMode }) {
 
       {/* Filters and Search */}
       <div className="flex flex-col md:flex-row md:items-end gap-4">
-        <ReportsFilter onFilter={setFilters} />
+        {userRole === "citizen" ? (
+          <ReportsFilter onFilter={setFilters} />
+        ) : (
+          <div className="flex-1 bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-700 rounded p-4 text-sm italic">
+            🔒 Filters are not available for {userRole}s.
+          </div>
+        )}
+
         <input
           type="text"
           placeholder="Search by title or reporter"

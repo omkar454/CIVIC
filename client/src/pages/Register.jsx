@@ -124,7 +124,7 @@ export default function Register({ setUserRole, setUserName }) {
             />
           </div>
 
-          <div>
+          {/* <div>
             <label className="block text-sm font-semibold mb-1">Role</label>
             <select
               name="role"
@@ -135,7 +135,7 @@ export default function Register({ setUserRole, setUserName }) {
               <option value="citizen">Citizen</option>
               <option value="officer">Officer</option>
             </select>
-          </div>
+          </div> */}
 
           <button
             type="submit"
