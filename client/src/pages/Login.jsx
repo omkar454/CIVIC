@@ -78,9 +78,9 @@ export default function Login({ setUserRole, setUserName }) {
           <h1 className="text-3xl font-bold text-blue-700 dark:text-blue-400">
             Bandra Municipal Corporation
           </h1>
-          <p className="text-gray-600 dark:text-gray-300">
+          {/* <p className="text-gray-600 dark:text-gray-300">
             Citizen Portal Login
-          </p>
+          </p> */}
         </div>
 
         {error && (

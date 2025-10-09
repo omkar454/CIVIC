@@ -50,11 +50,11 @@ export default function ReportsLists({ darkMode }) {
       const res = await API.get(`/reports?${query}`);
       let allReports = res.data.reports || [];
 
-      // Include text reports for officers/admins and citizens
+      // Include text reports for all roles
       const textRes = await API.get("/reports/textreports");
       const textReports = textRes.data.reports.map((r) => ({
         ...r,
-        isTextReport: true, // flag for handling vote
+        isTextReport: true,
       }));
       allReports = [...allReports, ...textReports];
 
@@ -118,22 +118,16 @@ export default function ReportsLists({ darkMode }) {
 
       {/* Filters & Search */}
       <div className="flex flex-col md:flex-row md:items-end gap-4">
-        {userRole === "citizen" ? (
-          <ReportsFilter onFilter={setFilters} />
-        ) : (
-          <div className="flex-1 bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-700 rounded p-4 text-sm italic">
-            🔒 Filters are not available for {userRole}s.
-          </div>
-        )}
-
-        <input
-          type="text"
-          placeholder="Search by title or reporter"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="border p-2 rounded w-full md:w-64 focus:outline-none focus:ring focus:ring-blue-400 dark:bg-gray-800 dark:text-white"
-        />
+        <ReportsFilter onFilter={setFilters} role={userRole} />
       </div>
+
+      <input
+        type="text"
+        placeholder="Search by title or reporter"
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+        className="border p-2 rounded w-full md:w-64 focus:outline-none focus:ring focus:ring-blue-400 dark:bg-gray-800 dark:text-white"
+      />
 
       {/* Reports Table */}
       {loading ? (
@@ -165,7 +159,8 @@ export default function ReportsLists({ darkMode }) {
             <tbody>
               {reports.map((r) => {
                 const hasVoted = r.voters?.includes(userId);
-                const canVote = userRole === "citizen" && r.reporter?._id !== userId;
+                const canVote =
+                  userRole === "citizen" && r.reporter?._id !== userId;
                 return (
                   <tr
                     key={r._id}

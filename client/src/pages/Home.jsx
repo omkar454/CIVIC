@@ -46,11 +46,11 @@ const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#A020F0"];
 
 // Severity color mapping (1 → safe, 5 → danger)
 const SEVERITY_COLORS = {
-  1: "#4CAF50", // Green (Safe)
-  2: "#CDDC39", // Lime (Low)
-  3: "#FFB300", // Amber (Moderate)
-  4: "#FB8C00", // Orange (High)
-  5: "#D32F2F", // Red (Critical)
+  1: "#4CAF50",
+  2: "#CDDC39",
+  3: "#FFB300",
+  4: "#FB8C00",
+  5: "#D32F2F",
 };
 
 // Status color mapping for officers
@@ -76,7 +76,7 @@ export default function Home() {
     if (!token) navigate("/login");
   }, [token, navigate]);
 
-  // Fetch reports (geocoded + textual/manual)
+  // Fetch reports
   useEffect(() => {
     if (!token) return;
 
@@ -88,19 +88,16 @@ export default function Home() {
 
         const query = new URLSearchParams(queryObj).toString();
 
-        // Fetch geocoded reports
         const resGeo = await axios.get(
           `http://localhost:5000/api/reports?${query}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
 
-        // Fetch textual/manual reports
         const resText = await axios.get(
           `http://localhost:5000/api/reports/textreports`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
 
-        // Merge reports
         const mergedReports = [
           ...(resGeo.data.reports || []).map((r) => ({
             ...r,
@@ -146,7 +143,7 @@ export default function Home() {
     [reports]
   );
 
-  // Category Data (for citizens & admin)
+  // Charts
   const categoryData = useMemo(() => {
     const data = {};
     reports.forEach((r) => {
@@ -156,7 +153,6 @@ export default function Home() {
     return Object.values(data);
   }, [reports]);
 
-  // Status Data (for officers)
   const statusData = useMemo(() => {
     const data = {};
     reports.forEach((r) => {
@@ -166,7 +162,6 @@ export default function Home() {
     return Object.values(data);
   }, [reports]);
 
-  // Severity Data (for all)
   const severityData = useMemo(() => {
     const data = {};
     reports.forEach((r) => {
@@ -183,8 +178,31 @@ export default function Home() {
       </p>
     );
 
+  // 🟩 Dynamic banner heading based on role
+  const getBanner = () => {
+    if (role === "officer")
+      return `Officer Dashboard – ${userDepartment || "General"} Department`;
+    if (role === "admin")
+      return "Admin Dashboard – Bandra Municipal Corporation";
+    return "Citizen Dashboard – Bandra Municipal Corporation";
+  };
+
+  const bannerColor =
+    role === "officer"
+      ? "bg-green-100 text-green-800 border-green-400"
+      : role === "admin"
+      ? "bg-red-100 text-red-800 border-red-400"
+      : "bg-blue-100 text-blue-800 border-blue-400";
+
   return (
     <div className="max-w-7xl mx-auto p-4">
+      {/* 🟦 Dynamic Role Banner */}
+      <div
+        className={`${bannerColor} border px-4 py-3 rounded mb-6 font-semibold text-center text-lg`}
+      >
+        {getBanner()}
+      </div>
+
       <h2 className="text-3xl font-bold mb-6 text-blue-700 dark:text-blue-400">
         Bandra Municipal Corporation Dashboard
       </h2>
@@ -256,9 +274,8 @@ export default function Home() {
 
       {/* Charts */}
       <div className="grid md:grid-cols-2 gap-6 mb-6">
-        {/* Left Chart - Conditional */}
+        {/* Left Chart */}
         {role === "officer" ? (
-          // 🟩 Officer: Status Distribution Chart
           <div className="bg-white dark:bg-gray-800 shadow rounded p-4">
             <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
               Report Status Distribution
@@ -288,7 +305,6 @@ export default function Home() {
             </ResponsiveContainer>
           </div>
         ) : (
-          // 🟦 Citizen/Admin: Category Chart (unchanged)
           categoryData.length > 0 && (
             <div className="bg-white dark:bg-gray-800 shadow rounded p-4">
               <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
@@ -315,7 +331,7 @@ export default function Home() {
           )
         )}
 
-        {/* Severity Chart + Legend (same for all) */}
+        {/* Severity Chart */}
         {severityData.length > 0 && (
           <div className="bg-white dark:bg-gray-800 shadow rounded p-4">
             <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
@@ -378,7 +394,7 @@ export default function Home() {
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
                 Reported by: {r.reporter?.name || "Unknown"} (
-                {r.reporter?.email || "N/A"})
+                {r.reporter?.email || "N/A"} )
               </p>
               {r.isTextReport && (
                 <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">

@@ -44,7 +44,6 @@ const UserSchema = new mongoose.Schema(
       default: "general",
       validate: {
         validator: function (v) {
-          // Citizens cannot have non-general department
           if (this.role === "citizen" && v !== "general") return false;
           return true;
         },
@@ -80,6 +79,24 @@ const UserSchema = new mongoose.Schema(
     warnings: { type: Number, default: 0 },
     blocked: { type: Boolean, default: false },
 
+    // -----------------------------
+    // Logs for reasons
+    // -----------------------------
+    warningLogs: [
+      {
+        reason: { type: String, required: true },
+        date: { type: Date, default: Date.now },
+        admin: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      },
+    ],
+    blockedLogs: [
+      {
+        reason: { type: String, required: true },
+        date: { type: Date, default: Date.now },
+        admin: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      },
+    ],
+
     // Audit info
     lastLogin: { type: Date },
   },
@@ -93,7 +110,7 @@ UserSchema.index({ email: 1 }, { unique: true });
 UserSchema.index({ role: 1, department: 1 });
 
 // -----------------------------
-// Pre-save hook (optional for auto-block on warnings >=3)
+// Pre-save hook (auto-block on warnings >=3)
 // -----------------------------
 UserSchema.pre("save", function (next) {
   if (this.warnings >= 3) {
