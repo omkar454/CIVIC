@@ -14,8 +14,19 @@ export default function HeatmapLayer({
   useEffect(() => {
     if (!map || points.length === 0) return;
 
+    // Filter out points with missing lat/lng
+    const validPoints = points.filter(
+      (p) =>
+        Array.isArray(p) &&
+        p.length >= 2 &&
+        typeof p[0] === "number" &&
+        typeof p[1] === "number"
+    );
+
+    if (validPoints.length === 0) return;
+
     // Auto-scale intensity if not provided
-    const scaledPoints = points.map(([lat, lng, intensity]) => [
+    const scaledPoints = validPoints.map(([lat, lng, intensity]) => [
       lat,
       lng,
       intensity ?? 0.5, // default intensity if missing

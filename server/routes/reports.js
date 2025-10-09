@@ -1,14 +1,17 @@
+// routes/reports.js
 import express from "express";
 import Report from "../models/Report.js";
-import auth from "../middleware/auth.js";
-import Notification from "../models/Notification.js";
+import TextAddressReport from "../models/TextAddressReport.js"; // ✅ New model
 import User from "../models/User.js";
+import Notification from "../models/Notification.js";
+import auth from "../middleware/auth.js";
+import fetch from "node-fetch";
 
 const router = express.Router();
 
-// -----------------------------
-// Map category → department
-// -----------------------------
+/* ------------------------------------------------------------
+   🗂 Category → Department mapping
+------------------------------------------------------------ */
 const categoryToDept = {
   pothole: "road",
   garbage: "sanitation",
@@ -22,20 +25,38 @@ const categoryToDept = {
   other: "general",
 };
 
-function mapCategoryToDepartment(category) {
-  return categoryToDept[category] || "general";
+const mapCategoryToDepartment = (category) =>
+  categoryToDept[category] || "general";
+
+/* ------------------------------------------------------------
+   ⚙️ Utility: Calculate Priority
+------------------------------------------------------------ */
+const calculatePriority = (severity = 3, votes = 0) =>
+  severity * 10 + votes * 5;
+
+/* ------------------------------------------------------------
+   🗺️ Geocode Address using OpenStreetMap
+------------------------------------------------------------ */
+async function geocodeAddress(address) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
+      address
+    )}`;
+    const res = await fetch(url, { headers: { "User-Agent": "CivicApp/1.0" } });
+    const data = await res.json();
+    if (data && data.length > 0) {
+      return [parseFloat(data[0].lon), parseFloat(data[0].lat)];
+    }
+    return null;
+  } catch (err) {
+    console.error("Geocoding error:", err);
+    return null;
+  }
 }
 
-// -----------------------------
-// Calculate priority score
-// -----------------------------
-function calculatePriority(severity, votes) {
-  return (severity || 3) * 10 + (votes || 0) * 5;
-}
-
-// -----------------------------
-// Create a new report (citizen only)
-// -----------------------------
+/* ------------------------------------------------------------
+   📝 Create Report
+------------------------------------------------------------ */
 router.post("/", auth("citizen"), async (req, res) => {
   try {
     const {
@@ -43,80 +64,184 @@ router.post("/", auth("citizen"), async (req, res) => {
       description,
       category,
       severity = 3,
+      address = "",
       location,
       media,
+      questionToOfficer = "",
     } = req.body;
 
-    if (!title || !description || !category || !location?.coordinates?.length)
+    if (!title || !description || !category) {
       return res.status(400).json({ message: "Missing required fields" });
+    }
 
     const department = mapCategoryToDepartment(category);
+    let coordinates = location?.coordinates;
 
-    const report = await Report.create({
+    /* ------------------------------------------------------------
+       CASE 1️⃣: Manual Address Report (Text Only)
+    ------------------------------------------------------------ */
+    if (address && (!coordinates || coordinates.length !== 2)) {
+      const textReport = await TextAddressReport.create({
+        title,
+        description,
+        category,
+        severity,
+        department,
+        reporter: req.user.id,
+        address: address.trim(),
+        media,
+        questionToOfficer: questionToOfficer.trim() || "",
+      });
+
+      // Optional: Add officer question as a comment
+      if (questionToOfficer.trim()) {
+        textReport.comments.push({
+          message: questionToOfficer.trim(),
+          by: req.user.id,
+        });
+        await textReport.save();
+      }
+
+      // Notify relevant officers
+      const officers = await User.find({ role: "officer", department });
+      if (officers.length) {
+        const notifications = officers.map((o) => ({
+          user: o._id,
+          message: `📝 New ${category} report with manual address submitted to your department.`,
+        }));
+        await Notification.insertMany(notifications);
+      }
+
+      return res.status(201).json({
+        message: "Manual address report submitted successfully",
+        report: textReport,
+      });
+    }
+
+    /* ------------------------------------------------------------
+       CASE 2️⃣: Geocoded Report (with coordinates)
+    ------------------------------------------------------------ */
+    if ((!coordinates || coordinates.length !== 2) && address) {
+      const geo = await geocodeAddress(address);
+      if (geo) coordinates = geo;
+    }
+
+    if (!coordinates || coordinates.length !== 2) {
+      return res.status(400).json({
+        message:
+          "Valid coordinates or address required to create a geocoded report.",
+      });
+    }
+
+    const reportData = {
       title,
       description,
       category,
       severity,
       department,
-      location,
-      media,
       reporter: req.user.id,
+      address: address.trim(),
+      media,
+      location: {
+        type: "Point",
+        coordinates: coordinates.map(Number),
+      },
       priorityScore: calculatePriority(severity, 0),
-    });
+    };
 
-    // Notify officers in department
+    const report = await Report.create(reportData);
+
+    if (questionToOfficer.trim()) {
+      report.comments.push({
+        message: questionToOfficer.trim(),
+        by: req.user.id,
+      });
+      await report.save();
+    }
+
     const officers = await User.find({ role: "officer", department });
-    const notifications = officers.map((o) => ({
-      user: o._id,
-      message: `New ${category} report assigned to your department`,
-    }));
-    await Notification.insertMany(notifications);
+    if (officers.length) {
+      const notifications = officers.map((o) => ({
+        user: o._id,
+        message: `📍 New ${category} report assigned to your department.`,
+      }));
+      await Notification.insertMany(notifications);
+    }
 
-    res.status(201).json(report);
+    res.status(201).json({
+      message: "Geocoded report submitted successfully",
+      report,
+    });
   } catch (err) {
     console.error("Create report error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// -----------------------------
-// Officer/Admin queue
-// -----------------------------
-router.get("/officer-queue", auth(["officer", "admin"]), async (req, res) => {
+// Allow all roles: citizen, officer, admin
+router.get("/textreports", auth(["admin", "officer", "citizen"]), async (req, res) => {
   try {
-    const filter = { status: { $ne: "Resolved" } };
-    if (req.user.role === "officer") filter.department = req.user.department;
+    const filter = {};
+    
+    // Officers still see only their department
+    if (req.user.role === "officer") {
+      filter.department = req.user.department;
+    }
 
-    const reports = await Report.find(filter)
+    // Citizens can see all text reports → no filter by reporter
+
+    const reports = await TextAddressReport.find(filter)
       .populate("reporter", "name email role")
       .populate("assignedTo", "name email role department")
-      .sort({ priorityScore: -1, createdAt: 1 });
+      .sort({ createdAt: -1 });
 
-    const mapped = reports.map((r) => ({
-      ...r.toObject(),
-      lat: r.location.coordinates[1],
-      lng: r.location.coordinates[0],
-    }));
-
-    res.json(mapped);
+    res.json({
+      total: reports.length,
+      reports: reports.map((r) => ({
+        ...r.toObject(),
+        lat: null,
+        lng: null,
+      })),
+    });
   } catch (err) {
-    console.error("Officer queue error:", err);
+    console.error("Fetch text reports error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// List reports (all roles)
+// Fetch single text report by ID
+router.get("/textreports/:id", auth(["admin", "officer", "citizen"]), async (req, res) => {
+  try {
+    const report = await TextAddressReport.findById(req.params.id)
+      .populate("reporter", "name email role")
+      .populate("assignedTo", "name email role department")
+      .populate("comments.by", "name email role")
+      .populate("comments.repliedBy", "name email role");
+
+    if (!report) return res.status(404).json({ message: "Report not found" });
+
+    res.json(report);
+  } catch (err) {
+    console.error("Fetch text report error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+/* ------------------------------------------------------------------
+   📋 Fetch Reports (with filters)
+-------------------------------------------------------------------*/
 router.get("/", auth(), async (req, res) => {
   try {
     const {
       category,
       status,
       severity,
+      department,
+      reporter,
       from,
       to,
-      reporter, // for "myReports" filter
       search,
-      department,
       lat,
       lng,
       radius = 500,
@@ -126,37 +251,29 @@ router.get("/", auth(), async (req, res) => {
 
     const filter = {};
 
-    // Category / Status / Severity
+    // if (req.user.role === "citizen") filter.reporter = req.user.id;
+    if (req.user.role === "officer") filter.department = req.user.department;
+
     if (category) filter.category = category;
     if (status) filter.status = status;
     if (severity) filter.severity = parseInt(severity);
+    if (department) filter.department = department;
+    if (reporter) filter.reporter = reporter;
 
-    // From / To date
     if (from || to) {
       filter.createdAt = {};
       if (from) filter.createdAt.$gte = new Date(from);
       if (to) filter.createdAt.$lte = new Date(to);
     }
 
-    // My Reports (citizen)
-    if (reporter && req.user.role === "citizen") {
-      filter.reporter = reporter;
-    }
-
-    // Officers only see their department
-    if (req.user.role === "officer") {
-      filter.department = req.user.department;
-    }
-
-    // Search
     if (search) {
       filter.$or = [
         { title: new RegExp(search, "i") },
         { description: new RegExp(search, "i") },
+        { address: new RegExp(search, "i") },
       ];
     }
 
-    // Geo filter (optional)
     if (lat && lng) {
       const latNum = parseFloat(lat);
       const lngNum = parseFloat(lng);
@@ -167,6 +284,7 @@ router.get("/", auth(), async (req, res) => {
     }
 
     const skip = (page - 1) * limit;
+
     const reports = await Report.find(filter)
       .populate("reporter", "name email role")
       .populate("assignedTo", "name email role department")
@@ -176,18 +294,16 @@ router.get("/", auth(), async (req, res) => {
 
     const total = await Report.countDocuments(filter);
 
-    const mapped = reports.map((r) => ({
-      ...r.toObject(),
-      lat: r.location.coordinates[1],
-      lng: r.location.coordinates[0],
-    }));
-
     res.json({
       total,
       page: parseInt(page),
       limit: parseInt(limit),
       totalPages: Math.ceil(total / limit),
-      reports: mapped,
+      reports: reports.map((r) => ({
+        ...r.toObject(),
+        lat: r.location?.coordinates?.[1],
+        lng: r.location?.coordinates?.[0],
+      })),
     });
   } catch (err) {
     console.error("Fetch reports error:", err);
@@ -196,10 +312,51 @@ router.get("/", auth(), async (req, res) => {
 });
 
 
+// Fetch all reports (geo + text) for officer queue
+router.get("/officer-queue", auth("officer"), async (req, res) => {
+  try {
+    const userDepartment = req.user.department;
 
-// -----------------------------
-// Get report details
-// -----------------------------
+    // Geocoded reports
+    const geoReports = await Report.find({ department: userDepartment })
+      .populate("reporter", "name email role")
+      .populate("assignedTo", "name email role department")
+      .sort({ createdAt: -1 });
+
+    // Text-only reports
+    const textReports = await TextAddressReport.find({ department: userDepartment })
+      .populate("reporter", "name email role")
+      .populate("assignedTo", "name email role department")
+      .sort({ createdAt: -1 });
+
+    // Map lat/lng for geo reports, null for text reports
+    const geoMapped = geoReports.map((r) => ({
+      ...r.toObject(),
+      lat: r.location?.coordinates?.[1] ?? null,
+      lng: r.location?.coordinates?.[0] ?? null,
+    }));
+
+    const textMapped = textReports.map((r) => ({
+      ...r.toObject(),
+      lat: null,
+      lng: null,
+    }));
+
+    // Combine both
+    const combined = [...geoMapped, ...textMapped];
+
+    res.json(combined);
+  } catch (err) {
+    console.error("Officer queue fetch error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+
+/* ------------------------------------------------------------------
+📍 Get Single Report
+-------------------------------------------------------------------*/
 router.get("/:id", auth(), async (req, res) => {
   try {
     const report = await Report.findById(req.params.id)
@@ -213,8 +370,8 @@ router.get("/:id", auth(), async (req, res) => {
 
     res.json({
       ...report.toObject(),
-      lat: report.location.coordinates[1],
-      lng: report.location.coordinates[0],
+      lat: report.location?.coordinates?.[1],
+      lng: report.location?.coordinates?.[0],
     });
   } catch (err) {
     console.error("Report detail error:", err);
@@ -222,57 +379,77 @@ router.get("/:id", auth(), async (req, res) => {
   }
 });
 
-// -----------------------------
-// Update status (officer/admin)
-// -----------------------------
+/* ------------------------------------------------------------------
+   🧑‍🔧 Update Report Status (Officer/Admin, includes Rejected)
+   ✅ Now requires media upload for officer status changes
+-------------------------------------------------------------------*/
 router.post("/:id/status", auth(["officer", "admin"]), async (req, res) => {
   try {
-    const { status, note } = req.body;
-    const allowed = ["Open", "Acknowledged", "In Progress", "Resolved"];
+    const { status, note, media } = req.body; // media array added
+
+    // Allowed statuses now include "Rejected"
+    const allowed = ["Open", "Acknowledged", "In Progress", "Resolved", "Rejected"];
     if (!status || !allowed.includes(status))
       return res.status(400).json({ message: "Invalid status" });
 
-    const report = await Report.findById(req.params.id);
+    // Try to find the report in both models
+    let report =
+      (await Report.findById(req.params.id)) ||
+      (await TextAddressReport.findById(req.params.id));
+
     if (!report) return res.status(404).json({ message: "Report not found" });
 
-    // Officer can only update their own department reports
-    if (
-      req.user.role === "officer" &&
-      req.user.department !== report.department
-    ) {
+    // Officers can only update reports of their department
+    if (req.user.role === "officer" && req.user.department !== report.department)
       return res.status(403).json({ message: "Unauthorized" });
+
+    // -----------------------------
+    // Validate media for officer
+    // -----------------------------
+    if (req.user.role === "officer") {
+      if (!media || !Array.isArray(media) || media.length === 0) {
+        return res.status(400).json({ message: "Officer must upload proof media when changing status." });
+      }
     }
 
+    // Map media to required format
+    const formattedMedia = (media || []).map((m) => ({
+      url: m.url,
+      mime: m.mime,
+      uploadedBy: req.user.role, // "officer" or "admin"
+      uploadedAt: new Date(),
+    }));
+
+    // Update status and status history
     report.status = status;
     report.statusHistory.push({
       status,
       by: req.user.id,
       note: note || "",
+      media: formattedMedia, // ✅ Attach officer media here
       at: new Date(),
     });
 
     await report.save();
 
+    // Notify reporter
     await Notification.create({
       user: report.reporter,
-      message: `Your report "${report.title}" status changed to "${status}"`,
+      message: `Your report "${report.title}" status changed to "${status}".`,
     });
 
-    const fullReport = await Report.findById(report._id)
-      .populate("reporter", "name email role")
-      .populate("assignedTo", "name email role department")
-      .populate("statusHistory.by", "name email role");
-
-    res.json({ message: "Status updated", report: fullReport });
+    res.json({ message: "Status updated", report });
   } catch (err) {
     console.error("Status update error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// -----------------------------
-// Add comment
-// -----------------------------
+
+
+/* ------------------------------------------------------------------
+   💬 Add Comment
+-------------------------------------------------------------------*/
 router.post("/:id/comments", auth(["citizen", "officer"]), async (req, res) => {
   try {
     const { message } = req.body;
@@ -284,9 +461,8 @@ router.post("/:id/comments", auth(["citizen", "officer"]), async (req, res) => {
     if (
       req.user.role === "officer" &&
       req.user.department !== report.department
-    ) {
-      return res.status(403).json({ message: "Unauthorized to comment" });
-    }
+    )
+      return res.status(403).json({ message: "Unauthorized" });
 
     report.comments.push({ message, by: req.user.id });
     await report.save();
@@ -294,24 +470,20 @@ router.post("/:id/comments", auth(["citizen", "officer"]), async (req, res) => {
     if (req.user.role === "officer") {
       await Notification.create({
         user: report.reporter,
-        message: `Officer commented on your report "${report.title}"`,
+        message: `Officer commented on your report "${report.title}".`,
       });
     }
 
-    const updatedReport = await Report.findById(report._id)
-      .populate("comments.by", "name email role")
-      .populate("comments.repliedBy", "name email role");
-
-    res.json({ message: "Comment added", report: updatedReport });
+    res.json({ message: "Comment added", report });
   } catch (err) {
     console.error("Add comment error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// -----------------------------
-// Reply to comment
-// -----------------------------
+/* ------------------------------------------------------------------
+   💬 Reply to Comment
+-------------------------------------------------------------------*/
 router.post(
   "/:id/comments/:commentId/reply",
   auth(["officer", "admin", "citizen"]),
@@ -331,9 +503,8 @@ router.post(
       if (
         req.user.role === "officer" &&
         req.user.department !== report.department
-      ) {
-        return res.status(403).json({ message: "Unauthorized to reply" });
-      }
+      )
+        return res.status(403).json({ message: "Unauthorized" });
 
       comment.reply = reply;
       comment.repliedBy = req.user.id;
@@ -343,18 +514,11 @@ router.post(
       if (req.user.role === "officer") {
         await Notification.create({
           user: report.reporter,
-          message: `Officer replied to a comment on your report "${report.title}"`,
+          message: `Officer replied to your comment on report "${report.title}".`,
         });
       }
 
-      const updatedReport = await Report.findById(report._id)
-        .populate("comments.by", "name email role")
-        .populate("comments.repliedBy", "name email role");
-
-      res.json({
-        message: "Reply added",
-        comment: updatedReport.comments.id(req.params.commentId),
-      });
+      res.json({ message: "Reply added", comment });
     } catch (err) {
       console.error("Reply error:", err);
       res.status(500).json({ message: "Server error" });
@@ -362,9 +526,9 @@ router.post(
   }
 );
 
-// -----------------------------
-// Assign officer (admin only)
-// -----------------------------
+/* ------------------------------------------------------------------
+   👮 Assign Officer (Admin)
+-------------------------------------------------------------------*/
 router.post("/:id/assign", auth("admin"), async (req, res) => {
   try {
     const { officerId } = req.body;
@@ -383,5 +547,6 @@ router.post("/:id/assign", auth("admin"), async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 export default router;

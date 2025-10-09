@@ -1,13 +1,13 @@
 // src/pages/ReportDetail.jsx
 import { useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
-import axios from "axios";
+import API from "../services/api";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 
-// Red marker for report
+// Red marker icon
 const redIcon = new L.Icon({
   iconUrl:
     "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
@@ -23,26 +23,55 @@ export default function ReportDetail() {
   const [loading, setLoading] = useState(true);
   const [commentText, setCommentText] = useState("");
   const [address, setAddress] = useState("");
+  const [statusNote, setStatusNote] = useState("");
+  const [officerFiles, setOfficerFiles] = useState([]); // selected files
+  const [uploadedUrls, setUploadedUrls] = useState([]); // Cloudinary uploaded URLs
+
+  const availableStatuses = [
+    "Open",
+    "Acknowledged",
+    "In Progress",
+    "Resolved",
+    "Rejected",
+  ];
+
   const role = localStorage.getItem("role");
   const userId = localStorage.getItem("userId");
   const userDept = localStorage.getItem("department");
-  const token = localStorage.getItem("accessToken");
 
   // ------------------ Fetch Report ------------------
   const fetchReport = async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`http://localhost:5000/api/reports/${id}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      setReport(res.data);
+      let data;
+      try {
+        const res = await API.get(`/reports/${id}`);
+        data = res.data;
+        data.isTextReport = false;
+      } catch (err) {
+        if (err.response?.status === 404) {
+          const resText = await API.get(`/reports/textreports/${id}`);
+          data = resText.data;
+          data.isTextReport = true;
+        } else throw err;
+      }
 
-      // Reverse geocoding for human-readable address
-      if (res.data.lat && res.data.lng) {
-        const geoRes = await axios.get(
-          `https://nominatim.openstreetmap.org/reverse?format=json&lat=${res.data.lat}&lon=${res.data.lng}`
-        );
-        setAddress(geoRes.data.display_name || "");
+      if (data.isTextReport) {
+        setReport(data);
+        setAddress(data.address || "");
+      } else if (data.location?.coordinates?.length === 2) {
+        const [lng, lat] = data.location.coordinates;
+        setReport({ ...data, lat, lng });
+        try {
+          const geoRes = await API.get(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+          );
+          setAddress(geoRes.data.display_name || "");
+        } catch {
+          setAddress("");
+        }
+      } else {
+        setReport(data);
       }
     } catch (err) {
       console.error("Fetch report error:", err);
@@ -59,11 +88,7 @@ export default function ReportDetail() {
   // ------------------ Voting ------------------
   const voteReport = async () => {
     try {
-      await axios.post(
-        `http://localhost:5000/api/votesComments/${id}/vote`,
-        {},
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await API.post(`/votesComments/${id}/vote`);
       fetchReport();
     } catch (err) {
       console.error("Vote error:", err);
@@ -75,11 +100,7 @@ export default function ReportDetail() {
   const addComment = async () => {
     if (!commentText) return;
     try {
-      await axios.post(
-        `http://localhost:5000/api/votesComments/${id}/comment`,
-        { message: commentText },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await API.post(`/votesComments/${id}/comment`, { message: commentText });
       setCommentText("");
       fetchReport();
     } catch (err) {
@@ -92,11 +113,9 @@ export default function ReportDetail() {
   const replyToComment = async (commentId, replyText) => {
     if (!replyText) return;
     try {
-      await axios.post(
-        `http://localhost:5000/api/votesComments/${id}/reply/${commentId}`,
-        { reply: replyText },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await API.post(`/votesComments/${id}/reply/${commentId}`, {
+        reply: replyText,
+      });
       fetchReport();
     } catch (err) {
       console.error("Reply error:", err);
@@ -104,14 +123,54 @@ export default function ReportDetail() {
     }
   };
 
-  // ------------------ Status Update ------------------
-  const updateStatus = async (status) => {
+  // ------------------ Officer Media Upload ------------------
+  const handleOfficerFileChange = async (e) => {
+    const newFiles = Array.from(e.target.files);
+    if (newFiles.length === 0) return;
+
     try {
-      await axios.post(
-        `http://localhost:5000/api/reports/${id}/status`,
-        { status },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const formData = new FormData();
+      newFiles.forEach((file) => formData.append("media", file));
+
+      const uploadRes = await API.post("/media", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      const uploadedMedia = uploadRes.data.uploaded || [];
+      setUploadedUrls((prev) => [...prev, ...uploadedMedia]);
+      setOfficerFiles((prev) => [...prev, ...newFiles]);
+    } catch (err) {
+      console.error("Upload error:", err);
+      alert(err.response?.data?.message || "Media upload failed");
+    }
+  };
+
+  const removeOfficerFile = (index) => {
+    setOfficerFiles((prev) => prev.filter((_, i) => i !== index));
+    setUploadedUrls((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateStatusWithNote = async (status) => {
+    if (!statusNote.trim()) {
+      alert("Please provide a note while updating status.");
+      return;
+    }
+    if (uploadedUrls.length === 0) {
+      alert("Please upload at least one proof media file.");
+      return;
+    }
+
+    try {
+      await API.post(`/reports/${id}/status`, {
+        status,
+        note: statusNote,
+        media: uploadedUrls,
+      });
+
+      alert("Status updated successfully with proof media!");
+      setStatusNote("");
+      setOfficerFiles([]);
+      setUploadedUrls([]);
       fetchReport();
     } catch (err) {
       console.error("Status update error:", err);
@@ -119,14 +178,13 @@ export default function ReportDetail() {
     }
   };
 
-  // ------------------ UI Conditions ------------------
+  // ------------------ UI ------------------
   if (loading)
     return (
       <p className="text-center mt-10 text-lg text-gray-500">
         Loading report...
       </p>
     );
-
   if (!report)
     return (
       <p className="text-center mt-10 text-lg text-gray-500">
@@ -139,24 +197,20 @@ export default function ReportDetail() {
     Acknowledged: "bg-yellow-100 text-yellow-700",
     "In Progress": "bg-blue-100 text-blue-700",
     Resolved: "bg-green-100 text-green-700",
+    Rejected: "bg-gray-200 text-gray-700",
   };
 
   const canVote = role === "citizen" && report.reporter?._id !== userId;
   const canComment = role === "citizen";
   const normalize = (str) => str?.trim().toLowerCase();
   const canReply =
-    role === "officer" &&
-    (normalize(report.department) === normalize(userDept) ||
-      normalize(report.category) === normalize(userDept));
-
+    role === "officer" && normalize(report.department) === normalize(userDept);
   const canUpdateStatus =
-    role === "officer" &&
-    (normalize(report.department) === normalize(userDept) ||
-      normalize(report.category) === normalize(userDept));
+    role === "officer" && normalize(report.department) === normalize(userDept);
 
   return (
     <div className="max-w-5xl mx-auto p-4 space-y-6">
-      {/* Report Details */}
+      {/* ---------------- Report Details ---------------- */}
       <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6 space-y-4">
         <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2">
           <h1 className="text-3xl font-bold text-blue-700 dark:text-blue-400">
@@ -170,7 +224,6 @@ export default function ReportDetail() {
             {report.status}
           </Badge>
         </div>
-
         <p className="text-gray-700 dark:text-gray-300">{report.description}</p>
         <p className="text-sm text-gray-500">
           Reported by: {report.reporter?.name || "Unknown"} (
@@ -179,10 +232,10 @@ export default function ReportDetail() {
         </p>
         <p className="text-sm text-gray-500">
           Department: {report.department || "N/A"} | Category:{" "}
-          {report.category || "N/A"}
+          {report.category || "N/A"} | Severity Level:{" "}
+          {report.severity || "N/A"}
         </p>
 
-        {/* Voting */}
         {canVote && (
           <Button
             onClick={voteReport}
@@ -198,11 +251,11 @@ export default function ReportDetail() {
         )}
       </div>
 
-      {/* Media */}
+      {/* ---------------- Media Section ---------------- */}
       {report.media?.length > 0 && (
         <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3">
           <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
-            Media
+            Media (Citizen & Officer Proofs)
           </h2>
           <div className="flex flex-wrap gap-3">
             {report.media.map((m, i) =>
@@ -210,7 +263,7 @@ export default function ReportDetail() {
                 <img
                   key={i}
                   src={m.url}
-                  alt="report media"
+                  alt="media"
                   className="w-48 h-48 object-cover rounded border cursor-pointer hover:scale-105 transition"
                   onClick={() => window.open(m.url, "_blank")}
                 />
@@ -219,7 +272,8 @@ export default function ReportDetail() {
                   key={i}
                   src={m.url}
                   controls
-                  className="w-64 h-48 object-cover rounded border"
+                  className="w-64 h-48 object-cover rounded border cursor-pointer hover:scale-105 transition"
+                  onClick={() => window.open(m.url, "_blank")}
                 />
               )
             )}
@@ -227,75 +281,194 @@ export default function ReportDetail() {
         </div>
       )}
 
-      {/* Map */}
-      <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl overflow-hidden">
-        <MapContainer
-          center={[report.lat, report.lng]}
-          zoom={16}
-          style={{ height: "400px", width: "100%" }}
-        >
-          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          <Marker position={[report.lat, report.lng]} icon={redIcon}>
-            <Popup>
-              <div className="space-y-1">
-                <p className="font-semibold">{report.title}</p>
-                <p>Category: {report.category}</p>
-                <p>Severity: {report.severity}</p>
-                <p>Reported by: {report.reporter?.name}</p>
-                <p>Created at: {new Date(report.createdAt).toLocaleString()}</p>
-                <p>
-                  Coordinates: Lat {report.lat.toFixed(6)}, Lng{" "}
-                  {report.lng.toFixed(6)}
-                </p>
-                {address && <p>Address: {address}</p>}
-              </div>
-            </Popup>
-          </Marker>
-        </MapContainer>
-
-        {/* Info below map */}
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-1">
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Coordinates: Lat {report.lat.toFixed(6)}, Lng{" "}
-            {report.lng.toFixed(6)}
-          </p>
-          {address && (
+      {/* ---------------- Map Section ---------------- */}
+      {!report.isTextReport && report.lat && report.lng ? (
+        <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl overflow-hidden">
+          <MapContainer
+            center={[report.lat, report.lng]}
+            zoom={16}
+            style={{ height: "400px", width: "100%" }}
+          >
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            <Marker position={[report.lat, report.lng]} icon={redIcon}>
+              <Popup>
+                <div className="space-y-1">
+                  <p className="font-semibold">{report.title}</p>
+                  <p>Category: {report.category}</p>
+                  <p>Severity: {report.severity}</p>
+                  <p>Department: {report.department}</p>
+                  <p>Reported by: {report.reporter?.name}</p>
+                  <p>Created: {new Date(report.createdAt).toLocaleString()}</p>
+                  {address && <p>Address: {address}</p>}
+                  <p>
+                    Lat: {report.lat.toFixed(6)} | Lng: {report.lng.toFixed(6)}
+                  </p>
+                </div>
+              </Popup>
+            </Marker>
+          </MapContainer>
+          <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-1">
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Address: {address}
+              Coordinates: Lat {report.lat.toFixed(6)}, Lng{" "}
+              {report.lng.toFixed(6)}
             </p>
-          )}
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Reported by: {report.reporter?.name || "Unknown"} (
-            {report.reporter?.email || "N/A"})
-          </p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Category: {report.category || "N/A"} | Severity: {report.severity}
-          </p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
-            Created at: {new Date(report.createdAt).toLocaleString()}
-          </p>
+            {address && (
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Address: {address}
+              </p>
+            )}
+          </div>
         </div>
-      </div>
-
-      {/* Officer Status Controls */}
-      {canUpdateStatus && report.status !== "Resolved" && (
-        <div className="flex gap-2">
-          {["Open", "Acknowledged", "In Progress", "Resolved"].map(
-            (st) =>
-              st !== report.status && (
-                <Button
-                  key={st}
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
-                  onClick={() => updateStatus(st)}
-                >
-                  Mark as {st}
-                </Button>
-              )
-          )}
+      ) : (
+        <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-1">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Address: {address || "Address not available"}
+          </p>
         </div>
       )}
 
-      {/* Comments */}
+      {/* ---------------- Officer Status Controls ---------------- */}
+      {canUpdateStatus && report.status !== "Resolved" && (
+        <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3">
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+            Update Status (Note + Proof Required)
+          </h3>
+
+          <textarea
+            placeholder="Enter a note about the update"
+            value={statusNote}
+            onChange={(e) => setStatusNote(e.target.value)}
+            className="w-full border p-2 rounded focus:outline-none focus:ring focus:ring-blue-400 dark:bg-gray-800 dark:text-white"
+            rows={3}
+          />
+
+          <input
+            type="file"
+            multiple
+            onChange={handleOfficerFileChange}
+            className="mt-2 border p-2 rounded w-full dark:bg-gray-800 dark:text-white"
+          />
+
+          {/* Officer Media Preview */}
+          {uploadedUrls.length > 0 && (
+            <div className="flex flex-wrap gap-3 mt-2">
+              {uploadedUrls.map((m, index) =>
+                m.mime.startsWith("image/") ? (
+                  <div key={index} className="relative">
+                    <img
+                      src={m.url}
+                      alt="preview"
+                      onClick={() => window.open(m.url, "_blank")}
+                      className="w-32 h-32 object-cover rounded border cursor-pointer hover:scale-105 transition"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeOfficerFile(index)}
+                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                ) : (
+                  <div key={index} className="relative">
+                    <video
+                      src={m.url}
+                      controls
+                      onClick={() => window.open(m.url, "_blank")}
+                      className="w-40 h-32 object-cover rounded border cursor-pointer hover:scale-105 transition"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeOfficerFile(index)}
+                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                )
+              )}
+            </div>
+          )}
+
+          <div className="flex flex-wrap gap-2 mt-3">
+            {availableStatuses
+              .filter((st) => st !== report.status && st !== "Open")
+              .map((st) => (
+                <Button
+                  key={st}
+                  onClick={() => updateStatusWithNote(st)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  Mark as {st}
+                </Button>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* ---------------- Status History ---------------- */}
+      {report.statusHistory?.length > 0 && (
+        <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3">
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+            Status History
+          </h3>
+          <div className="space-y-2">
+            {report.statusHistory
+              .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+              .map((s, idx) => (
+                <div
+                  key={idx}
+                  className="p-3 bg-gray-100 dark:bg-gray-700 rounded shadow-sm"
+                >
+                  <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                    Status:{" "}
+                    <span
+                      className={`px-2 py-1 rounded-full ${
+                        statusColor[s.status] || "bg-gray-200 text-gray-700"
+                      }`}
+                    >
+                      {s.status}
+                    </span>
+                  </p>
+                  <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
+                    Note: {s.note || "No note provided"}
+                  </p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Changed by: {s.by?.name || "Officer"} |{" "}
+                    {new Date(s.createdAt).toLocaleString()}
+                  </p>
+
+                  {/* Officer Proof Media */}
+                  {s.media?.length > 0 && (
+                    <div className="flex flex-wrap gap-2 mt-2">
+                      {s.media.map((m, j) =>
+                        m.mime.startsWith("image/") ? (
+                          <img
+                            key={j}
+                            src={m.url}
+                            onClick={() => window.open(m.url, "_blank")}
+                            alt="proof"
+                            className="w-32 h-32 object-cover rounded border cursor-pointer hover:scale-105 transition"
+                          />
+                        ) : (
+                          <video
+                            key={j}
+                            src={m.url}
+                            controls
+                            onClick={() => window.open(m.url, "_blank")}
+                            className="w-40 h-32 object-cover rounded border cursor-pointer hover:scale-105 transition"
+                          />
+                        )
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+
+      {/* ---------------- Comments ---------------- */}
       <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3">
         <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
           Comments
@@ -312,14 +485,11 @@ export default function ReportDetail() {
                   {c.by?.name || "Citizen"} |{" "}
                   {new Date(c.createdAt).toLocaleString()}
                 </p>
-
                 {c.reply && (
                   <p className="mt-1 pl-4 border-l-2 border-gray-300 text-gray-600 dark:text-gray-400">
                     Reply by {c.repliedBy?.name}: {c.reply}
                   </p>
                 )}
-
-                {/* Officer reply input */}
                 {canReply && !c.reply && (
                   <div className="mt-1 flex gap-2">
                     <input
@@ -342,8 +512,6 @@ export default function ReportDetail() {
             <p className="text-gray-500">No comments yet.</p>
           )}
         </div>
-
-        {/* Citizen comment input */}
         {canComment && (
           <div className="mt-3 flex gap-2">
             <input

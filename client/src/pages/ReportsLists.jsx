@@ -1,56 +1,64 @@
-// src/pages/ReportLists.jsx
+// src/pages/ReportsLists.jsx
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import API from "../services/api";
+import API from "../services/api"; // centralized axios instance
 import ReportsFilter from "../components/ReportsFilter";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 
-export default function ReportLists({ darkMode }) {
+export default function ReportsLists({ darkMode }) {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({});
   const [search, setSearch] = useState("");
 
-  const token = localStorage.getItem("accessToken");
   const userRole = localStorage.getItem("role");
   const userDepartment = localStorage.getItem("department");
+  const userId = localStorage.getItem("userId");
 
+  // -----------------------------
+  // Fetch Reports (regular + text-only)
+  // -----------------------------
   const fetchReports = async () => {
     setLoading(true);
     try {
       const queryObj = {};
 
-      // Add category, status, severity from filters
+      // Filters
       if (filters.category) queryObj.category = filters.category;
       if (filters.status) queryObj.status = filters.status;
       if (filters.severity) queryObj.severity = filters.severity;
-
-      // Add from/to date
       if (filters.from || filters.to) {
         queryObj.from = filters.from || undefined;
         queryObj.to = filters.to || undefined;
       }
 
-      // Add myReports filter (for citizens)
+      // My reports (citizen)
       if (filters.myReports === "true" && userRole === "citizen") {
-        queryObj.reporter = localStorage.getItem("userId"); // assuming you store userId on login
+        queryObj.reporter = userId;
       }
 
-      // Officers only see their department reports
+      // Officer → department filter
       if (userRole === "officer" && userDepartment) {
         queryObj.department = userDepartment;
       }
 
-      // Search term
+      // Search text
       if (search) queryObj.search = search;
 
       const query = new URLSearchParams(queryObj).toString();
-      const res = await API.get(`/reports?${query}`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const res = await API.get(`/reports?${query}`);
+      let allReports = res.data.reports || [];
 
-      setReports(res.data.reports || []);
+      // Include text reports for officers/admins and citizens
+      const textRes = await API.get("/reports/textreports");
+      const textReports = textRes.data.reports.map((r) => ({
+        ...r,
+        isTextReport: true, // flag for handling vote
+      }));
+      allReports = [...allReports, ...textReports];
+
+      setReports(allReports);
     } catch (err) {
       console.error("Failed to fetch reports:", err);
       setReports([]);
@@ -59,16 +67,47 @@ export default function ReportLists({ darkMode }) {
     }
   };
 
-
   useEffect(() => {
     fetchReports();
   }, [filters, search]);
+
+  // -----------------------------
+  // Citizen: Vote / Cancel Vote
+  // -----------------------------
+  const handleVote = async (report) => {
+    try {
+      if (!report.voters?.includes(userId)) {
+        await API.post(`/votesComments/${report._id}/vote`);
+      } else {
+        await API.post(`/votesComments/${report._id}/cancel-vote`);
+      }
+      fetchReports();
+    } catch (err) {
+      console.error("Vote failed:", err);
+      alert(err.response?.data?.message || "Failed to submit vote");
+    }
+  };
+
+  // -----------------------------
+  // Officer: Reject Report
+  // -----------------------------
+  const handleReject = async (reportId) => {
+    if (!window.confirm("Are you sure you want to reject this report?")) return;
+    try {
+      await API.post(`/reports/${reportId}/reject`);
+      fetchReports();
+    } catch (err) {
+      console.error("Reject failed:", err);
+      alert("Failed to reject report");
+    }
+  };
 
   const statusColor = {
     Open: "bg-red-100 text-red-700",
     Acknowledged: "bg-yellow-100 text-yellow-700",
     "In Progress": "bg-blue-100 text-blue-700",
     Resolved: "bg-green-100 text-green-700",
+    Rejected: "bg-gray-200 text-gray-800",
   };
 
   return (
@@ -77,7 +116,7 @@ export default function ReportLists({ darkMode }) {
         Civic Reports Dashboard
       </h1>
 
-      {/* Filters and Search */}
+      {/* Filters & Search */}
       <div className="flex flex-col md:flex-row md:items-end gap-4">
         {userRole === "citizen" ? (
           <ReportsFilter onFilter={setFilters} />
@@ -124,57 +163,74 @@ export default function ReportLists({ darkMode }) {
               </tr>
             </thead>
             <tbody>
-              {reports.map((r) => (
-                <tr
-                  key={r._id}
-                  className={`border-t hover:bg-gray-50 ${
-                    darkMode ? "hover:bg-gray-700" : ""
-                  }`}
-                >
-                  <td className="p-2 font-semibold">{r.title}</td>
-                  <td>{r.category}</td>
-                  <td>{r.severity}</td>
-                  <td>
-                    <Badge
-                      className={`rounded-full px-2 py-1 ${
-                        statusColor[r.status] || "bg-gray-100 text-gray-700"
-                      }`}
-                    >
-                      {r.status}
-                    </Badge>
-                  </td>
-                  <td>
-                    {r.reporter?.name || "Unknown"} (
-                    {r.reporter?.email || "N/A"})
-                  </td>
-                  <td>
-                    {new Date(r.createdAt).toLocaleString(undefined, {
-                      dateStyle: "medium",
-                      timeStyle: "short",
-                    })}
-                  </td>
-                  <td className="space-x-2">
-                    <Link to={`/reports/${r._id}`}>
-                      <Button size="sm" variant="default">
-                        View
-                      </Button>
-                    </Link>
-                    {(userRole === "officer" || userRole === "admin") && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          alert(
-                            "Officer/Admin actions to update status can be implemented here"
-                          )
-                        }
+              {reports.map((r) => {
+                const hasVoted = r.voters?.includes(userId);
+                const canVote = userRole === "citizen" && r.reporter?._id !== userId;
+                return (
+                  <tr
+                    key={r._id}
+                    className={`border-t hover:bg-gray-50 ${
+                      darkMode ? "hover:bg-gray-700" : ""
+                    }`}
+                  >
+                    <td className="p-2 font-semibold">{r.title}</td>
+                    <td>{r.category}</td>
+                    <td>{r.severity}</td>
+                    <td>
+                      <Badge
+                        className={`rounded-full px-2 py-1 ${
+                          statusColor[r.status] || "bg-gray-100 text-gray-700"
+                        }`}
                       >
-                        Update
-                      </Button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+                        {r.status}
+                      </Badge>
+                    </td>
+                    <td>
+                      {r.reporter?.name || "Unknown"} (
+                      {r.reporter?.email || "N/A"})
+                    </td>
+                    <td>
+                      {new Date(r.createdAt).toLocaleString(undefined, {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      })}
+                    </td>
+                    <td className="space-x-2">
+                      <Link to={`/reports/${r._id}`}>
+                        <Button size="sm" variant="default">
+                          View
+                        </Button>
+                      </Link>
+
+                      {canVote && (
+                        <Button
+                          size="sm"
+                          variant={hasVoted ? "destructive" : "outline"}
+                          onClick={() => handleVote(r)}
+                        >
+                          {hasVoted ? "Cancel Vote" : "Vote"}
+                        </Button>
+                      )}
+
+                      {!canVote && userRole === "citizen" && (
+                        <span className="text-gray-500 text-sm">
+                          Cannot vote on own report
+                        </span>
+                      )}
+
+                      {userRole === "officer" && r.status !== "Rejected" && (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => handleReject(r._id)}
+                        >
+                          Reject
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -2,18 +2,12 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
-import {
-  MapContainer,
-  TileLayer,
-  Marker,
-  Tooltip,
-  useMapEvents,
-} from "react-leaflet";
+import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import HeatmapLayer from "../components/HeatMapLayer";
 
-// Default red marker
+// Red marker icon for selected location
 const redIcon = new L.Icon({
   iconUrl:
     "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
@@ -23,21 +17,33 @@ const redIcon = new L.Icon({
   iconAnchor: [12, 41],
 });
 
-// Location picker component
-function LocationPicker({ position, setPosition }) {
+// Component to handle map clicks
+function LocationPicker({ setPosition }) {
   useMapEvents({
     click(e) {
       setPosition([e.latlng.lat, e.latlng.lng]);
     },
   });
+  return null;
+}
 
-  return position ? (
-    <Marker position={position} icon={redIcon}>
-      <Tooltip direction="top" offset={[0, -10]} opacity={1} permanent>
-        Selected Location
-      </Tooltip>
-    </Marker>
-  ) : null;
+// Heatmap legend component at bottom-right
+function HeatmapLegend() {
+  return (
+    <div className="absolute bottom-2 right-2 bg-white dark:bg-gray-800 p-2 rounded shadow text-xs z-50">
+      <p className="font-semibold text-gray-700 dark:text-gray-200">
+        Heatmap Severity
+      </p>
+      <div className="flex items-center space-x-2 mt-1">
+        <div className="w-4 h-4 bg-green-400 rounded-full"></div>
+        <span>Low</span>
+        <div className="w-4 h-4 bg-yellow-400 rounded-full"></div>
+        <span>Medium</span>
+        <div className="w-4 h-4 bg-red-400 rounded-full"></div>
+        <span>High</span>
+      </div>
+    </div>
+  );
 }
 
 export default function ReportForm() {
@@ -54,9 +60,9 @@ export default function ReportForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [questionText, setQuestionText] = useState(""); // Question to officer
+  const [questionText, setQuestionText] = useState("");
   const [existingReports, setExistingReports] = useState([]);
-  const [locationOption, setLocationOption] = useState("map"); // "live", "map", "address"
+  const [locationOption, setLocationOption] = useState("map");
 
   const navigate = useNavigate();
   const token = localStorage.getItem("accessToken");
@@ -68,7 +74,10 @@ export default function ReportForm() {
         const res = await axios.get("http://localhost:5000/api/reports", {
           headers: { Authorization: `Bearer ${token}` },
         });
-        setExistingReports(res.data.reports || []);
+        const filtered = (res.data.reports || []).filter(
+          (r) => r.location && r.location.coordinates
+        );
+        setExistingReports(filtered);
       } catch (err) {
         console.error("Failed to fetch reports for heatmap", err);
       }
@@ -76,7 +85,7 @@ export default function ReportForm() {
     fetchReports();
   }, [token]);
 
-  // Fetch live location when option is "live"
+  // Fetch live location
   useEffect(() => {
     if (locationOption === "live" && navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -84,33 +93,28 @@ export default function ReportForm() {
           const lat = pos.coords.latitude;
           const lng = pos.coords.longitude;
           setPosition([lat, lng]);
-
           try {
-            // Reverse geocoding for address
-            const geoRes = await axios.get(
+            const res = await axios.get(
               `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`
             );
-            setLiveAddress(geoRes.data.display_name || "");
-          } catch (err) {
-            console.warn("Reverse geocoding failed", err);
+            setLiveAddress(res.data.display_name || "");
+          } catch {
             setLiveAddress("");
           }
         },
         (err) => {
-          console.warn("Live location not available", err);
+          console.warn("Live location not available:", err);
           setLiveAddress("");
         }
       );
     }
   }, [locationOption]);
 
-  const handleChange = (e) => {
+  const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
-  };
 
-  const handleSeverityChange = (e) => {
+  const handleSeverityChange = (e) =>
     setForm({ ...form, severity: parseInt(e.target.value) });
-  };
 
   const handleMediaUpload = (e) => {
     const files = Array.from(e.target.files);
@@ -124,6 +128,7 @@ export default function ReportForm() {
     }));
   };
 
+  // Submit report
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -137,26 +142,22 @@ export default function ReportForm() {
     }
 
     if ((locationOption === "live" || locationOption === "map") && !position) {
-      setError("Select location on map or use live location.");
+      setError("Select a location or enable live location.");
       setLoading(false);
       return;
     }
 
     if (locationOption === "address" && !manualAddress.trim()) {
-      setError("Please enter an address.");
+      setError("Please enter a valid address.");
       setLoading(false);
       return;
     }
 
     try {
-      // ---------------------------
-      // Upload media
-      // ---------------------------
       let mediaURLs = [];
       if (form.media.length > 0) {
         const mediaForm = new FormData();
         form.media.forEach((file) => mediaForm.append("media", file));
-
         const mediaRes = await axios.post(
           "http://localhost:5000/api/media",
           mediaForm,
@@ -167,40 +168,28 @@ export default function ReportForm() {
             },
           }
         );
-
         mediaURLs = mediaRes.data.uploaded.map((f) => ({
           url: f.url,
           mime: f.mime,
         }));
       }
 
-      // ---------------------------
-      // Prepare report payload
-      // ---------------------------
-      const reportPayload = {
-        title: form.title,
-        description: form.description,
-        category: form.category,
-        severity: form.severity,
-        media: mediaURLs,
-        location:
-          locationOption !== "address"
-            ? { type: "Point", coordinates: [position[1], position[0]] }
-            : undefined,
-        address:
-          locationOption === "address"
-            ? manualAddress
-            : locationOption === "live"
-            ? liveAddress
-            : "",
-      };
+      const payload =
+        locationOption === "address"
+          ? { ...form, media: mediaURLs, address: manualAddress }
+          : {
+              ...form,
+              media: mediaURLs,
+              location: {
+                type: "Point",
+                coordinates: [position[1], position[0]],
+              },
+              address: locationOption === "live" ? liveAddress : "",
+            };
 
-      // ---------------------------
-      // Submit report
-      // ---------------------------
       const res = await axios.post(
         "http://localhost:5000/api/reports",
-        reportPayload,
+        payload,
         {
           headers: { Authorization: `Bearer ${token}` },
         }
@@ -208,9 +197,6 @@ export default function ReportForm() {
 
       const reportId = res.data._id;
 
-      // ---------------------------
-      // Send question as comment
-      // ---------------------------
       if (questionText.trim()) {
         await axios.post(
           `http://localhost:5000/api/votesComments/${reportId}/comment`,
@@ -334,7 +320,7 @@ export default function ReportForm() {
             </div>
           </div>
 
-          {/* Media */}
+          {/* Media Upload */}
           <div>
             <label className="block text-sm font-medium mb-1">
               Upload Media
@@ -379,7 +365,7 @@ export default function ReportForm() {
             )}
           </div>
 
-          {/* Question to Officer */}
+          {/* Question */}
           <div>
             <label className="block text-sm font-medium mb-1">
               Question to Officer (optional)
@@ -392,13 +378,13 @@ export default function ReportForm() {
             />
           </div>
 
-          {/* Location Selection */}
+          {/* Location selection */}
           <div>
             <label className="block text-sm font-medium mb-1">
               Select Location
             </label>
-            <div className="mb-2">
-              <label className="mr-4">
+            <div className="mb-2 flex flex-wrap gap-4">
+              <label>
                 <input
                   type="radio"
                   name="locationOption"
@@ -409,7 +395,7 @@ export default function ReportForm() {
                 />
                 Use Live Location
               </label>
-              <label className="mr-4">
+              <label>
                 <input
                   type="radio"
                   name="locationOption"
@@ -433,44 +419,44 @@ export default function ReportForm() {
               </label>
             </div>
 
+            {/* Map */}
             {locationOption === "map" && (
-              <div className="h-80 rounded overflow-hidden">
+              <div className="relative h-80 rounded overflow-hidden">
                 <MapContainer
                   center={[19.0617, 72.8305]}
                   zoom={13}
                   style={{ height: "100%", width: "100%" }}
                 >
                   <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                  <LocationPicker
-                    position={position}
-                    setPosition={setPosition}
-                  />
+                  <LocationPicker setPosition={setPosition} />
                   {existingReports.length > 0 && (
                     <HeatmapLayer
                       points={existingReports.map((r) => [
-                        r.lat,
-                        r.lng,
+                        r.location.coordinates[1],
+                        r.location.coordinates[0],
                         r.severity / 5,
                       ])}
                       options={{ radius: 25, blur: 15 }}
-                      showLegend={true}
+                      showLegend={false}
                     />
                   )}
+                  {position && <Marker position={position} icon={redIcon} />}
                 </MapContainer>
-                {position && (
-                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-                    Selected Location: Lat: {position[0].toFixed(6)}, Lng:{" "}
-                    {position[1].toFixed(6)}
-                  </p>
-                )}
-                <p className="text-xs text-gray-500 dark:text-gray-300 mt-1">
-                  Click on the map to select issue location.
-                </p>
+                <HeatmapLegend />
               </div>
             )}
 
+            {/* Selected Lat & Long */}
+            {position && locationOption !== "address" && (
+              <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
+                Selected Location → Lat: {position[0].toFixed(6)}, Lng:{" "}
+                {position[1].toFixed(6)}
+              </p>
+            )}
+
+            {/* Live Location display */}
             {locationOption === "live" && position && (
-              <div className="p-2 border rounded">
+              <div className="p-2 border rounded mt-1">
                 <p className="text-sm text-gray-700 dark:text-gray-300">
                   Lat: {position[0].toFixed(6)}, Lng: {position[1].toFixed(6)}
                 </p>
@@ -480,6 +466,7 @@ export default function ReportForm() {
               </div>
             )}
 
+            {/* Manual Address */}
             {locationOption === "address" && (
               <input
                 type="text"
@@ -491,7 +478,7 @@ export default function ReportForm() {
             )}
           </div>
 
-          {/* Submit */}
+          {/* Submit Button */}
           <button
             type="submit"
             disabled={loading}

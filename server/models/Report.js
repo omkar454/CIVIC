@@ -1,5 +1,39 @@
-// models/Report.js
 import mongoose from "mongoose";
+
+// -----------------------------
+// Media Schema for status updates
+// -----------------------------
+const StatusMediaSchema = new mongoose.Schema({
+  url: { type: String, required: true },
+  mime: { type: String, required: true },
+  uploadedBy: { type: String, enum: ["citizen", "officer"], required: true },
+  uploadedAt: { type: Date, default: Date.now },
+});
+
+// -----------------------------
+// Status History Schema
+// -----------------------------
+const StatusHistorySchema = new mongoose.Schema({
+  status: { type: String, required: true },
+  by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  note: { type: String, default: "" },
+  media: [StatusMediaSchema], // ✅ Media added
+  at: { type: Date, default: Date.now },
+});
+
+const CommentSchema = new mongoose.Schema({
+  message: { type: String, required: true },
+  by: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  reply: { type: String, default: "" },
+  repliedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  createdAt: { type: Date, default: Date.now },
+});
+
+const MediaSchema = new mongoose.Schema({
+  url: { type: String },
+  mime: { type: String },
+  uploadedBy: { type: String, enum: ["citizen", "officer"] },
+});
 
 const ReportSchema = new mongoose.Schema(
   {
@@ -25,102 +59,71 @@ const ReportSchema = new mongoose.Schema(
     department: { type: String, default: "general" },
     assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
 
-    // -----------------------------
-    // Location (optional coordinates)
-    // -----------------------------
     location: {
-      type: { type: String, enum: ["Point"], default: "Point" },
+      type: {
+        type: String,
+        enum: ["Point"],
+        default: "Point",
+      },
       coordinates: {
         type: [Number],
-        required: function () {
-          // coordinates required only if address not provided
-          return !this.address || this.address.trim() === "";
-        },
         validate: {
           validator: function (v) {
-            // if coordinates are provided, ensure exactly [lng, lat]
-            return !v || v.length === 2;
+            if (
+              (!v || v.length === 0) &&
+              this.address &&
+              this.address.trim() !== ""
+            )
+              return true;
+            return (
+              Array.isArray(v) &&
+              v.length === 2 &&
+              v.every((x) => typeof x === "number")
+            );
           },
-          message: "Location must have [longitude, latitude]",
+          message:
+            "Either valid coordinates or a non-empty address is required.",
         },
       },
     },
 
-    // -----------------------------
-    // Optional address field
-    // -----------------------------
     address: { type: String, trim: true, default: "" },
 
-    // -----------------------------
-    // Media attachments
-    // -----------------------------
-    media: [{ url: { type: String }, mime: { type: String } }],
-
-    // -----------------------------
-    // Voting system
-    // -----------------------------
+    media: [MediaSchema],
     votes: { type: Number, default: 0 },
     voters: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
-
-    // -----------------------------
-    // Reporter info
-    // -----------------------------
     reporter: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: true,
     },
 
-    // -----------------------------
-    // Status tracking
-    // -----------------------------
     status: {
       type: String,
-      enum: ["Open", "Acknowledged", "In Progress", "Resolved"],
+      enum: ["Open", "Acknowledged", "In Progress", "Resolved", "Rejected"],
       default: "Open",
     },
-    statusHistory: [
-      {
-        status: { type: String, required: true },
-        by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-        note: { type: String, default: "" },
-        at: { type: Date, default: Date.now },
-      },
-    ],
 
-    // -----------------------------
-    // Comments (citizen ↔ officer Q&A)
-    // -----------------------------
-    comments: [
-      {
-        message: { type: String, required: true },
-        by: {
-          type: mongoose.Schema.Types.ObjectId,
-          ref: "User",
-          required: true,
-        },
-        reply: { type: String, default: "" },
-        repliedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-        createdAt: { type: Date, default: Date.now },
-      },
-    ],
+    statusHistory: [StatusHistorySchema],
 
-    // -----------------------------
-    // Priority calculation
-    // -----------------------------
+    comments: [CommentSchema],
+
     priorityScore: { type: Number, default: 0 },
+    questionToOfficer: { type: String, default: "" },
+
+    // ✅ Officer proof media (NEW safe addition)
+    officerProofMedia: [
+      {
+        url: String,
+        mime: String,
+      },
+    ],
   },
   { timestamps: true }
 );
 
-// -----------------------------
-// Geo index for location search
-// -----------------------------
 ReportSchema.index({ location: "2dsphere" });
 
-// -----------------------------
-// Pre-save hook to calculate priority
-// -----------------------------
 ReportSchema.pre("save", function (next) {
   const severity = this.severity || 3;
   const votes = this.votes || 0;

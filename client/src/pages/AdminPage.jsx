@@ -20,12 +20,14 @@ export default function AdminPage() {
   const [analytics, setAnalytics] = useState(null);
   const [page, setPage] = useState(1);
   const [loadingUsers, setLoadingUsers] = useState(true);
+  const [totalPages, setTotalPages] = useState(1);
 
   const fetchUsers = async (p = 1) => {
     setLoadingUsers(true);
     try {
       const res = await API.get(`/admin/users?page=${p}&limit=10`);
       setUsers(res.data.users || []);
+      setTotalPages(res.data.totalPages || 1);
       setPage(p);
     } catch (err) {
       console.error("Fetch users failed:", err);
@@ -41,6 +43,7 @@ export default function AdminPage() {
       setAnalytics(res.data || {});
     } catch (err) {
       console.error("Analytics fetch failed:", err);
+      setAnalytics({});
     }
   };
 
@@ -51,6 +54,7 @@ export default function AdminPage() {
       fetchUsers(page);
     } catch (err) {
       console.error(err);
+      alert("Failed to send warning.");
     }
   };
 
@@ -61,6 +65,7 @@ export default function AdminPage() {
       fetchUsers(page);
     } catch (err) {
       console.error(err);
+      alert("Failed to update block status.");
     }
   };
 
@@ -129,14 +134,52 @@ export default function AdminPage() {
               </table>
             </div>
           )}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="mt-4 flex justify-center gap-2">
+              {Array.from({ length: totalPages }, (_, i) => (
+                <Button
+                  key={i + 1}
+                  size="sm"
+                  variant={page === i + 1 ? "primary" : "default"}
+                  onClick={() => fetchUsers(i + 1)}
+                >
+                  {i + 1}
+                </Button>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
       {/* Export Reports */}
       <Card>
-        <CardContent className="flex gap-4 flex-wrap">
-          <Button onClick={() => exportReports("json")}>Export JSON</Button>
-          <Button onClick={() => exportReports("csv")}>Export CSV</Button>
+        <CardContent className="space-y-3">
+          <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
+            Export Reports for Analysis
+          </h2>
+          <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
+            For deeper insights and offline analysis, you can export all civic
+            issue reports from the system in either <strong>JSON</strong> or{" "}
+            <strong>CSV</strong> format. These files can be analyzed in tools
+            such as Excel, Power BI, or data dashboards to understand trends,
+            department efficiency, and public issue patterns.
+          </p>
+          <div className="flex flex-wrap gap-4 pt-2">
+            <Button
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+              onClick={() => exportReports("json")}
+            >
+              📄 Export as JSON
+            </Button>
+            <Button
+              className="bg-green-600 hover:bg-green-700 text-white"
+              onClick={() => exportReports("csv")}
+            >
+              📊 Export as CSV
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

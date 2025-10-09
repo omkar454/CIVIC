@@ -8,6 +8,7 @@ import {
   Marker,
   Popup,
   LayerGroup,
+  Tooltip,
   useMapEvents,
 } from "react-leaflet";
 import L from "leaflet";
@@ -46,6 +47,26 @@ function HeatmapLayer({ points, options }) {
   return <LayerGroup />;
 }
 
+// Legend component
+function HeatmapLegend({ maxScore = 10 }) {
+  return (
+    <div className="absolute bottom-4 left-4 bg-white bg-opacity-90 p-2 rounded shadow z-50 text-xs">
+      <div className="font-semibold mb-1">Heatmap Legend</div>
+      <div className="flex items-center gap-1">
+        <span className="w-4 h-4 bg-green-400 inline-block rounded"></span> Low
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="w-4 h-4 bg-yellow-400 inline-block rounded"></span>{" "}
+        Medium
+      </div>
+      <div className="flex items-center gap-1">
+        <span className="w-4 h-4 bg-red-500 inline-block rounded"></span> High
+      </div>
+      <div className="mt-1 text-gray-700">Priority Score &lt;= {maxScore}</div>
+    </div>
+  );
+}
+
 // Category → Department mapping
 const categoryToDepartment = {
   pothole: "Roads",
@@ -73,9 +94,8 @@ export default function OfficerQueue() {
   const navigate = useNavigate();
   const token = localStorage.getItem("accessToken");
   const role = localStorage.getItem("role");
-  const userDepartment = localStorage.getItem("department"); // get officer's department
+  const userDepartment = localStorage.getItem("department");
 
-  // Redirect non-officers/admins
   useEffect(() => {
     if (!token || (role !== "officer" && role !== "admin")) {
       alert("Access denied. Only officers or admins can view this page.");
@@ -83,31 +103,29 @@ export default function OfficerQueue() {
     }
   }, [token, role, navigate]);
 
-  // Fetch officer queue
   const fetchQueue = async () => {
     setLoading(true);
     try {
       const queryObj = {};
-
-      // Only officers see their own department reports
-      if (role === "officer" && userDepartment) {
+      if (role === "officer" && userDepartment)
         queryObj.department = userDepartment;
-      }
-
       const query = new URLSearchParams(queryObj).toString();
 
       const res = await axios.get(
         `http://localhost:5000/api/reports/officer-queue?${query}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      const sorted = res.data
+      // Ensure res.data is array
+      const data = Array.isArray(res.data) ? res.data : [];
+
+      const sorted = data
         .map((r) => ({
           ...r,
           department: categoryToDepartment[r.category] || "General",
           priorityScore: (r.severity || 0) * 2 + (r.votes || 0),
+          lat: r.lat,
+          lng: r.lng,
         }))
         .sort((a, b) => b.priorityScore - a.priorityScore);
 
@@ -125,7 +143,7 @@ export default function OfficerQueue() {
     if (token && (role === "officer" || role === "admin")) fetchQueue();
   }, [token, role]);
 
-  // Apply filters
+  // Filters
   useEffect(() => {
     let temp = [...reports];
     if (filters.category)
@@ -136,15 +154,12 @@ export default function OfficerQueue() {
     setFilteredReports(temp);
   }, [filters, reports]);
 
-  // Update status
   const updateStatus = async (id, newStatus) => {
     try {
       await axios.post(
         `http://localhost:5000/api/reports/${id}/status`,
         { status: newStatus },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
       fetchQueue();
     } catch (err) {
@@ -157,13 +172,21 @@ export default function OfficerQueue() {
   if (!reports.length)
     return <p className="text-center mt-8">No reports in queue.</p>;
 
+  const reportsWithCoords = filteredReports.filter((r) => r.lat && r.lng);
+  const reportsNoCoords = filteredReports.filter((r) => !r.lat || !r.lng);
+
+  const maxPriority = Math.max(
+    ...reportsWithCoords.map((r) => r.priorityScore),
+    10
+  );
+
   return (
     <div className="max-w-6xl mx-auto space-y-6">
       <h2 className="text-xl font-bold mb-4">Officer Queue (by Priority)</h2>
 
       {/* Filters */}
       <div className="flex gap-2 mb-4 flex-wrap">
-        <select
+        {/* <select
           className="border p-2"
           value={filters.category}
           onChange={(e) => setFilters({ ...filters, category: e.target.value })}
@@ -174,8 +197,7 @@ export default function OfficerQueue() {
               {cat.charAt(0).toUpperCase() + cat.slice(1)}
             </option>
           ))}
-        </select>
-
+        </select> */}
         <select
           className="border p-2"
           value={filters.status}
@@ -187,7 +209,6 @@ export default function OfficerQueue() {
           <option value="In Progress">In Progress</option>
           <option value="Resolved">Resolved</option>
         </select>
-
         <select
           className="border p-2"
           value={filters.severity}
@@ -200,7 +221,6 @@ export default function OfficerQueue() {
             </option>
           ))}
         </select>
-
         <button
           className="bg-gray-200 px-3 rounded"
           onClick={() => setFilters({ category: "", status: "", severity: "" })}
@@ -209,40 +229,88 @@ export default function OfficerQueue() {
         </button>
       </div>
 
-      {/* Map */}
-      <div className="h-80 mb-6">
-        <MapContainer
-          center={[19.0617, 72.8305]}
-          zoom={13}
-          style={{ height: "100%", width: "100%" }}
-        >
-          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-          <HeatmapLayer
-            points={filteredReports.map((r) => [r.lat, r.lng, r.severity / 5])}
-            options={{ radius: 25, blur: 15, maxZoom: 17 }}
-          />
-          {filteredReports.map((r) => (
-            <Marker key={r._id} position={[r.lat, r.lng]} icon={redIcon}>
-              <Popup>
-                <strong>{r.title}</strong>
-                <br />
-                Category: {r.category} | Department: {r.department}
-                <br />
-                Severity: {r.severity} | Status: {r.status}
-                <br />
-                <Link
-                  to={`/reports/${r._id}`}
-                  className="text-blue-600 underline"
-                >
-                  View Details
-                </Link>
-              </Popup>
-            </Marker>
-          ))}
-        </MapContainer>
-      </div>
+      {reportsWithCoords.length > 0 && (
+        <div className="mb-6 relative">
+          <h3 className="text-lg font-semibold mb-2 text-gray-800 dark:text-gray-200">
+            Heatmap of Reports (by Priority Score)
+          </h3>
+          <p className="text-sm text-gray-600 mb-2">
+            Only reports with valid latitude and longitude affect the heatmap.
+          </p>
+          <div className="h-80 rounded shadow overflow-hidden relative">
+            <MapContainer
+              center={[19.0617, 72.8305]}
+              zoom={13}
+              style={{ height: "100%", width: "100%" }}
+            >
+              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-      {/* Reports */}
+              {/* Heatmap */}
+              <HeatmapLayer
+                points={reportsWithCoords.map((r) => [
+                  r.lat,
+                  r.lng,
+                  Math.min(r.priorityScore / maxPriority, 1),
+                ])}
+                options={{ radius: 25, blur: 15, maxZoom: 17 }}
+              />
+
+              {/* Tooltip markers for each report */}
+              {reportsWithCoords.map((r) => (
+                <Marker key={r._id} position={[r.lat, r.lng]} icon={redIcon}>
+                  <Popup>
+                    <div className="text-sm">
+                      <strong>{r.title}</strong>
+                      <br />
+                      Description: {r.description}
+                      <br />
+                      Category: {r.category} | Department: {r.department}
+                      <br />
+                      Severity: {r.severity} | Votes: {r.votes} | Priority:{" "}
+                      {r.priorityScore}
+                      <br />
+                      Status: {r.status}
+                      <br />
+                      <Link
+                        to={`/reports/${r._id}`}
+                        className="text-blue-600 underline"
+                      >
+                        View Details
+                      </Link>
+                    </div>
+                  </Popup>
+                </Marker>
+              ))}
+            </MapContainer>
+            {/* Legend */}
+            <HeatmapLegend maxScore={maxPriority} />
+          </div>
+        </div>
+      )}
+
+      {/* Reports without coordinates */}
+      {reportsNoCoords.length > 0 && (
+        <div className="mb-6 bg-white shadow rounded p-4">
+          <h3 className="text-lg font-semibold mb-2 text-gray-800 dark:text-gray-200">
+            Reports Not Displayed on Heatmap
+          </h3>
+          <p className="text-sm text-gray-600 mb-3">
+            These reports do not have valid latitude and longitude coordinates
+            but are still considered for administrative purposes.
+          </p>
+          <ul className="list-disc list-inside text-sm text-gray-700">
+            {reportsNoCoords.map((r) => (
+              <li key={r._id}>
+                <strong>{r.title}</strong> - Category: {r.category} |
+                Department: {r.department} | Severity: {r.severity} | Status:{" "}
+                {r.status}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* Reports List */}
       {filteredReports.map((r) => (
         <div key={r._id} className="bg-white shadow p-4 rounded space-y-2">
           <h3 className="font-bold text-lg">{r.title}</h3>
@@ -279,25 +347,8 @@ export default function OfficerQueue() {
             </div>
           )}
 
-          {role === "officer" && r.status !== "Resolved" && (
-            <div className="flex gap-2 mt-2">
-              {["Open", "Acknowledged", "In Progress", "Resolved"].map(
-                (st) =>
-                  st !== r.status && (
-                    <button
-                      key={st}
-                      onClick={() => updateStatus(r._id, st)}
-                      className="bg-blue-600 text-white px-2 py-1 rounded text-sm"
-                    >
-                      Mark as {st}
-                    </button>
-                  )
-              )}
-            </div>
-          )}
-
           <Link to={`/reports/${r._id}`} className="underline text-blue-600">
-            View Details {role === "officer" ? "& Update Status" : ""}
+            View Details & Update Status
           </Link>
         </div>
       ))}

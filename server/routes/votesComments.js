@@ -2,115 +2,141 @@
 import express from "express";
 import auth from "../middleware/auth.js";
 import Report from "../models/Report.js";
+import TextAddressReport from "../models/TextAddressReport.js";
 import User from "../models/User.js";
 import Notification from "../models/Notification.js";
 
 const router = express.Router();
 
-// -----------------------------
-// Upvote a report (citizen only, not own report)
-// -----------------------------
+/* ------------------------------------------------------------
+   Utility: Fetch report from either Report or TextAddressReport
+------------------------------------------------------------ */
+async function findReportById(id) {
+  // Try geocoded report first
+  let report = await Report.findById(id);
+  if (report) return { report, type: "geo" };
+
+  // Try textual report
+  report = await TextAddressReport.findById(id);
+  if (report) return { report, type: "text" };
+
+  return null;
+}
+
+/* ------------------------------------------------------------
+   Upvote a report (citizen only, not own report)
+------------------------------------------------------------ */
 router.post("/:id/vote", auth("citizen"), async (req, res) => {
   try {
-    const report = await Report.findById(req.params.id);
-    if (!report) return res.status(404).json({ message: "Report not found" });
+    const found = await findReportById(req.params.id);
+    if (!found) return res.status(404).json({ message: "Report not found" });
+
+    const { report, type } = found;
 
     if (report.reporter.toString() === req.user.id)
       return res
         .status(403)
         .json({ message: "Cannot vote on your own report" });
 
+    report.voters = report.voters || [];
     if (report.voters.includes(req.user.id))
       return res.status(409).json({ message: "Already voted" });
 
     report.votes = (report.votes || 0) + 1;
     report.voters.push(req.user.id);
 
-    // Update priority score (example: severity * 10 + votes * 5)
-    report.priorityScore =
-      (report.severity || 3) * 10 + (report.votes || 0) * 5;
+    // Only geocoded reports have priorityScore
+    if (type === "geo") {
+      report.priorityScore =
+        (report.severity || 3) * 10 + (report.votes || 0) * 5;
+    }
 
     await report.save();
 
-    const fullReport = await Report.findById(report._id)
-      .populate("reporter", "name email role")
-      .populate("comments.by", "name email role")
-      .populate("comments.repliedBy", "name email role");
+    // Notify reporter
+    await Notification.create({
+      user: report.reporter,
+      message: `Your report "${report.title}" received a new vote!`,
+    });
 
-    res.json({ message: "Vote recorded", report: fullReport });
+    res.json({ message: "Vote recorded", report });
   } catch (err) {
     console.error("Vote error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// -----------------------------
-// Citizen adds a comment
-// -----------------------------
+/* ------------------------------------------------------------
+   Add a comment (citizen only)
+------------------------------------------------------------ */
 router.post("/:id/comment", auth("citizen"), async (req, res) => {
   try {
     const { message } = req.body;
     if (!message) return res.status(400).json({ message: "Message required" });
 
-    const report = await Report.findById(req.params.id);
-    if (!report) return res.status(404).json({ message: "Report not found" });
+    const found = await findReportById(req.params.id);
+    if (!found) return res.status(404).json({ message: "Report not found" });
 
+    const { report } = found;
+    report.comments = report.comments || [];
     report.comments.push({ message, by: req.user.id, createdAt: new Date() });
     await report.save();
 
-    // Notify officers in the report's department
+    // Notify officers in report's department
     const officers = await User.find({
       role: "officer",
       department: report.department,
     });
-    const notifications = officers.map((o) => ({
-      user: o._id,
-      message: `New comment on report "${report.title}"`,
-    }));
-    if (notifications.length) await Notification.insertMany(notifications);
+    if (officers.length) {
+      const notifications = officers.map((o) => ({
+        user: o._id,
+        message: `New comment on report "${report.title}"`,
+      }));
+      await Notification.insertMany(notifications);
+    }
 
-    const fullReport = await Report.findById(report._id)
-      .populate("reporter", "name email role")
-      .populate("comments.by", "name email role")
-      .populate("comments.repliedBy", "name email role");
-
-    res.json({ message: "Comment added", report: fullReport });
+    res.json({ message: "Comment added", report });
   } catch (err) {
     console.error("Comment error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
 
-// -----------------------------
-// Officer replies to a comment (only if in same department)
-// -----------------------------
+/* ------------------------------------------------------------
+   Officer reply to a comment
+------------------------------------------------------------ */
 router.post("/:id/reply/:commentId", auth("officer"), async (req, res) => {
   try {
     const { reply } = req.body;
     if (!reply) return res.status(400).json({ message: "Reply required" });
 
-    const report = await Report.findById(req.params.id);
-    if (!report) return res.status(404).json({ message: "Report not found" });
+    const found = await findReportById(req.params.id);
+    if (!found) return res.status(404).json({ message: "Report not found" });
 
-    // Validate officer department
+    const { report } = found;
+
     if (req.user.department !== report.department)
       return res
         .status(403)
         .json({ message: "Unauthorized to reply to this report" });
 
+    report.comments = report.comments || [];
     const comment = report.comments.id(req.params.commentId);
     if (!comment) return res.status(404).json({ message: "Comment not found" });
 
     comment.reply = reply;
     comment.repliedBy = req.user.id;
+    comment.updatedAt = new Date();
+
     await report.save();
 
-    const fullReport = await Report.findById(report._id)
-      .populate("reporter", "name email role")
-      .populate("comments.by", "name email role")
-      .populate("comments.repliedBy", "name email role");
+    // Notify original commenter
+    await Notification.create({
+      user: comment.by,
+      message: `Officer replied to your comment on report "${report.title}"`,
+    });
 
-    res.json({ message: "Reply added", report: fullReport });
+    res.json({ message: "Reply added", report });
   } catch (err) {
     console.error("Reply error:", err);
     res.status(500).json({ message: "Server error" });

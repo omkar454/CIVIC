@@ -20,7 +20,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 
-// Fix default Leaflet marker
+// Leaflet marker fix
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl:
@@ -31,7 +31,7 @@ L.Icon.Default.mergeOptions({
     "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
 });
 
-// Custom Red Marker
+// Custom red marker
 const redIcon = new L.Icon({
   iconUrl:
     "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
@@ -41,7 +41,25 @@ const redIcon = new L.Icon({
   iconAnchor: [12, 41],
 });
 
+// Color palette for pie chart
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#A020F0"];
+
+// Severity color mapping (1 → safe, 5 → danger)
+const SEVERITY_COLORS = {
+  1: "#4CAF50", // Green (Safe)
+  2: "#CDDC39", // Lime (Low)
+  3: "#FFB300", // Amber (Moderate)
+  4: "#FB8C00", // Orange (High)
+  5: "#D32F2F", // Red (Critical)
+};
+
+// Status color mapping for officers
+const STATUS_COLORS = {
+  Open: "#E53935",
+  Acknowledged: "#FB8C00",
+  "In Progress": "#1E88E5",
+  Resolved: "#43A047",
+};
 
 export default function Home() {
   const [reports, setReports] = useState([]);
@@ -50,7 +68,7 @@ export default function Home() {
   const navigate = useNavigate();
   const token = localStorage.getItem("accessToken");
   const role = localStorage.getItem("role");
-  const userDepartment = localStorage.getItem("department"); // Officer's department
+  const userDepartment = localStorage.getItem("department");
   const userWarnings = parseInt(localStorage.getItem("warnings") || "0");
 
   // Redirect if not logged in
@@ -58,47 +76,63 @@ export default function Home() {
     if (!token) navigate("/login");
   }, [token, navigate]);
 
-  // Fetch reports
+  // Fetch reports (geocoded + textual/manual)
   useEffect(() => {
     if (!token) return;
 
-    const fetchReports = async () => {
+    (async () => {
       try {
-        const queryObj = { limit: 50 };
-
-        // If officer, only fetch their department reports
-        if (role === "officer" && userDepartment) {
+        const queryObj = { limit: 100 };
+        if (role === "officer" && userDepartment)
           queryObj.department = userDepartment;
-        }
 
         const query = new URLSearchParams(queryObj).toString();
 
-        const res = await axios.get(
+        // Fetch geocoded reports
+        const resGeo = await axios.get(
           `http://localhost:5000/api/reports?${query}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
 
-        const safeReports = (res.data.reports || []).map((r) => ({
-          ...r,
-          status: r.status || "Open",
-          severity: r.severity || 1,
-          reporter: r.reporter || { name: "Unknown", email: "N/A" },
-          lat: r.lat || 0,
-          lng: r.lng || 0,
-        }));
+        // Fetch textual/manual reports
+        const resText = await axios.get(
+          `http://localhost:5000/api/reports/textreports`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
 
-        setReports(safeReports);
+        // Merge reports
+        const mergedReports = [
+          ...(resGeo.data.reports || []).map((r) => ({
+            ...r,
+            lat: r.lat || null,
+            lng: r.lng || null,
+            isTextReport: false,
+            reporter: r.reporter || { name: "Unknown", email: "N/A" },
+            status: r.status || "Open",
+            severity: r.severity || 1,
+          })),
+          ...(resText.data.reports || []).map((r) => ({
+            ...r,
+            lat: null,
+            lng: null,
+            isTextReport: true,
+            reporter: r.reporter || { name: "Unknown", email: "N/A" },
+            status: r.status || "Open",
+            severity: r.severity || 1,
+          })),
+        ].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+        setReports(mergedReports);
       } catch (err) {
         console.error("Fetch reports error:", err);
         alert("Failed to fetch reports. Try again.");
       } finally {
         setLoading(false);
       }
-    };
-
-    fetchReports();
+    })();
   }, [token, role, userDepartment]);
 
+  // Heatmap points
   const heatmapPoints = useMemo(
     () =>
       reports
@@ -107,32 +141,40 @@ export default function Home() {
     [reports]
   );
 
-  const categoryData = useMemo(
-    () =>
-      Object.values(
-        reports.reduce((acc, r) => {
-          acc[r.category] = acc[r.category] || { name: r.category, value: 0 };
-          acc[r.category].value += 1;
-          return acc;
-        }, {})
-      ),
+  const reportsNoCoords = useMemo(
+    () => reports.filter((r) => !r.lat || !r.lng),
     [reports]
   );
 
-  const severityData = useMemo(
-    () =>
-      Object.values(
-        reports.reduce((acc, r) => {
-          acc[r.severity] = acc[r.severity] || {
-            severity: r.severity,
-            count: 0,
-          };
-          acc[r.severity].count += 1;
-          return acc;
-        }, {})
-      ),
-    [reports]
-  );
+  // Category Data (for citizens & admin)
+  const categoryData = useMemo(() => {
+    const data = {};
+    reports.forEach((r) => {
+      data[r.category] = data[r.category] || { name: r.category, value: 0 };
+      data[r.category].value += 1;
+    });
+    return Object.values(data);
+  }, [reports]);
+
+  // Status Data (for officers)
+  const statusData = useMemo(() => {
+    const data = {};
+    reports.forEach((r) => {
+      data[r.status] = data[r.status] || { name: r.status, value: 0 };
+      data[r.status].value += 1;
+    });
+    return Object.values(data);
+  }, [reports]);
+
+  // Severity Data (for all)
+  const severityData = useMemo(() => {
+    const data = {};
+    reports.forEach((r) => {
+      data[r.severity] = data[r.severity] || { severity: r.severity, count: 0 };
+      data[r.severity].count += 1;
+    });
+    return Object.values(data).sort((a, b) => a.severity - b.severity);
+  }, [reports]);
 
   if (loading)
     return (
@@ -167,52 +209,76 @@ export default function Home() {
             <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
             <HeatmapLayer
               points={heatmapPoints}
-              options={{ radius: 25, blur: 15, maxZoom: 17 }}
-              showLegend={true}
+              options={{ radius: 25, blur: 20, maxZoom: 17 }}
+              showLegend
             />
-
-            {reports.map(
-              (r) =>
-                r.lat &&
-                r.lng && (
-                  <Marker key={r._id} position={[r.lat, r.lng]} icon={redIcon}>
-                    <Popup>
-                      <strong>{r.title}</strong>
-                      <br />
-                      Category: {r.category} | Status: {r.status} | Severity:{" "}
-                      {r.severity}
-                      <br />
-                      {role === "officer" && (
-                        <span>Department: {userDepartment}</span>
-                      )}
-                    </Popup>
-                  </Marker>
-                )
-            )}
+            {reports
+              .filter((r) => r.lat && r.lng)
+              .map((r) => (
+                <Marker key={r._id} position={[r.lat, r.lng]} icon={redIcon}>
+                  <Popup>
+                    <strong>{r.title}</strong>
+                    <br />
+                    Category: {r.category} | Status: {r.status} | Severity:{" "}
+                    {r.severity}
+                  </Popup>
+                </Marker>
+              ))}
           </MapContainer>
+          <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">
+            Only geocoded reports contribute to the heatmap; redder areas
+            indicate more or higher severity reports.
+          </p>
+        </div>
+      )}
+
+      {/* Reports without coordinates */}
+      {reportsNoCoords.length > 0 && (
+        <div className="mb-6 bg-white dark:bg-gray-800 shadow rounded p-4">
+          <h3 className="text-lg font-semibold mb-2 text-gray-800 dark:text-gray-200">
+            Reports Not Displayed on Heatmap
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
+            These reports do not have valid latitude and longitude coordinates
+            but are included in the charts and latest report listing.
+          </p>
+          <ul className="list-disc list-inside text-sm text-gray-700 dark:text-gray-300">
+            {reportsNoCoords.map((r) => (
+              <li key={r._id}>
+                <strong>{r.title}</strong> - Category: {r.category} | Status:{" "}
+                {r.status} | Severity: {r.severity}
+                {r.isTextReport && <> | Textual Report</>}
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
       {/* Charts */}
       <div className="grid md:grid-cols-2 gap-6 mb-6">
-        {categoryData.length > 0 && (
+        {/* Left Chart - Conditional */}
+        {role === "officer" ? (
+          // 🟩 Officer: Status Distribution Chart
           <div className="bg-white dark:bg-gray-800 shadow rounded p-4">
             <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
-              Issue Distribution by Category
+              Report Status Distribution
             </h3>
             <ResponsiveContainer width="100%" height={250}>
               <PieChart>
                 <Pie
-                  data={categoryData}
+                  data={statusData}
                   dataKey="value"
                   nameKey="name"
                   outerRadius={90}
                   label
                 >
-                  {categoryData.map((entry, index) => (
+                  {statusData.map((entry, index) => (
                     <Cell
-                      key={`cell-${index}`}
-                      fill={COLORS[index % COLORS.length]}
+                      key={index}
+                      fill={
+                        STATUS_COLORS[entry.name] ||
+                        COLORS[index % COLORS.length]
+                      }
                     />
                   ))}
                 </Pie>
@@ -221,8 +287,35 @@ export default function Home() {
               </PieChart>
             </ResponsiveContainer>
           </div>
+        ) : (
+          // 🟦 Citizen/Admin: Category Chart (unchanged)
+          categoryData.length > 0 && (
+            <div className="bg-white dark:bg-gray-800 shadow rounded p-4">
+              <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
+                Issue Distribution by Category
+              </h3>
+              <ResponsiveContainer width="100%" height={250}>
+                <PieChart>
+                  <Pie
+                    data={categoryData}
+                    dataKey="value"
+                    nameKey="name"
+                    outerRadius={90}
+                    label
+                  >
+                    {categoryData.map((entry, index) => (
+                      <Cell key={index} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          )
         )}
 
+        {/* Severity Chart + Legend (same for all) */}
         {severityData.length > 0 && (
           <div className="bg-white dark:bg-gray-800 shadow rounded p-4">
             <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
@@ -232,52 +325,29 @@ export default function Home() {
               <BarChart data={severityData}>
                 <XAxis dataKey="severity" />
                 <YAxis />
-                <Tooltip
-                  content={({ active, payload }) => {
-                    if (active && payload && payload.length) {
-                      const entry = payload[0].payload;
-                      return (
-                        <div className="bg-white dark:bg-gray-700 p-2 rounded shadow text-sm text-gray-800 dark:text-gray-100">
-                          <p>Severity Level: {entry.severity}</p>
-                          <p>Count: {entry.count}</p>
-                        </div>
-                      );
-                    }
-                    return null;
-                  }}
-                />
+                <Tooltip />
                 <Bar dataKey="count">
-                  {severityData.map((entry, index) => {
-                    let color = "#66BB6A"; // 1 - green (safe)
-                    if (entry.severity === 2) color = "#C0CA33"; // 2 - lime
-                    else if (entry.severity === 3)
-                      color = "#FB8C00"; // 3 - orange
-                    else if (entry.severity === 4)
-                      color = "#F4511E"; // 4 - deep orange
-                    else if (entry.severity === 5) color = "#B71C1C"; // 5 - dark red
-                    return <Cell key={`cell-${index}`} fill={color} />;
-                  })}
+                  {severityData.map((entry, index) => (
+                    <Cell
+                      key={index}
+                      fill={SEVERITY_COLORS[entry.severity] || "#999"}
+                    />
+                  ))}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
 
-            {/* ✅ Custom legend below chart */}
-            <div className="flex justify-center gap-4 mt-4 flex-wrap">
-              {[
-                { level: 1, color: "#66BB6A" },
-                { level: 2, color: "#C0CA33" },
-                { level: 3, color: "#FB8C00" },
-                { level: 4, color: "#F4511E" },
-                { level: 5, color: "#B71C1C" },
-              ].map(({ level, color }) => (
-                <div key={level} className="flex items-center gap-2">
+            <div className="flex flex-wrap mt-3 gap-4 justify-center">
+              {Object.entries(SEVERITY_COLORS).map(([level, color]) => (
+                <div
+                  key={level}
+                  className="flex items-center space-x-1 text-gray-700 dark:text-gray-300"
+                >
                   <div
                     className="w-4 h-4 rounded"
                     style={{ backgroundColor: color }}
                   ></div>
-                  <span className="text-sm text-gray-700 dark:text-gray-300">
-                    Severity {level}
-                  </span>
+                  <span className="text-sm">Level {level}</span>
                 </div>
               ))}
             </div>
@@ -299,7 +369,7 @@ export default function Home() {
               className="bg-white dark:bg-gray-800 shadow rounded p-4 hover:shadow-lg transition"
             >
               <h4 className="font-bold text-blue-700 dark:text-blue-400 mb-1">
-                {r.title}
+                {r.title} {r.isTextReport && "(Textual Report)"}
               </h4>
               <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
                 Category: {r.category} | Status: {r.status} | Severity:{" "}
@@ -310,6 +380,11 @@ export default function Home() {
                 Reported by: {r.reporter?.name || "Unknown"} (
                 {r.reporter?.email || "N/A"})
               </p>
+              {r.isTextReport && (
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                  Address: {r.address || "Not provided"}
+                </p>
+              )}
               <Link
                 to={`/reports/${r._id}`}
                 className="text-blue-600 dark:text-blue-400 hover:underline"
