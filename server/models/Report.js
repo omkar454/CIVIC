@@ -1,3 +1,4 @@
+// model/Report.js
 import mongoose from "mongoose";
 
 // -----------------------------
@@ -21,6 +22,9 @@ const StatusHistorySchema = new mongoose.Schema({
   at: { type: Date, default: Date.now },
 });
 
+// -----------------------------
+// Comment Schema
+// -----------------------------
 const CommentSchema = new mongoose.Schema({
   message: { type: String, required: true },
   by: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
@@ -29,12 +33,35 @@ const CommentSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
+// -----------------------------
+// Media Schema
+// -----------------------------
 const MediaSchema = new mongoose.Schema({
   url: { type: String },
   mime: { type: String },
   uploadedBy: { type: String, enum: ["citizen", "officer"] },
 });
 
+// -----------------------------
+// Admin Verification Schema
+// -----------------------------
+const AdminVerificationSchema = new mongoose.Schema({
+  verified: { type: Boolean, default: null }, // null=pending, true=approved, false=rejected
+  note: { type: String, default: "" },
+  verifiedAt: { type: Date },
+  history: [
+    {
+      admin: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+      action: { type: String, enum: ["approved", "rejected"] },
+      note: { type: String },
+      createdAt: { type: Date, default: Date.now },
+    },
+  ],
+});
+
+// -----------------------------
+// Main Report Schema
+// -----------------------------
 const ReportSchema = new mongoose.Schema(
   {
     title: { type: String, required: true, trim: true },
@@ -88,7 +115,6 @@ const ReportSchema = new mongoose.Schema(
     },
 
     address: { type: String, trim: true, default: "" },
-
     media: [MediaSchema],
     votes: { type: Number, default: 0 },
     voters: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
@@ -104,20 +130,26 @@ const ReportSchema = new mongoose.Schema(
       default: "Open",
     },
 
+    // ✨ Pending officer update (waiting admin approval)
+    pendingStatus: {
+      type: String,
+      enum: ["Resolved", "Rejected", null],
+      default: null,
+    },
+
     statusHistory: [StatusHistorySchema],
-
     comments: [CommentSchema],
-
     priorityScore: { type: Number, default: 0 },
     questionToOfficer: { type: String, default: "" },
-
-    // ✅ Officer proof media (NEW safe addition)
     officerProofMedia: [
       {
         url: String,
         mime: String,
       },
     ],
+
+    // ----------------------------- Admin Verification
+    adminVerification: AdminVerificationSchema,
   },
   { timestamps: true }
 );

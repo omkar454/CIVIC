@@ -196,13 +196,14 @@ export default function ReportForm() {
     }));
   };
 
-  // Submit report
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setError("");
-    setSuccess("");
-    setLoading(true);
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setError("");
+  setSuccess("");
+  setLoading(true);
 
+  try {
+    // Validation
     if (!form.title || !form.description || !form.category) {
       setError("Please fill all required fields.");
       setLoading(false);
@@ -221,80 +222,97 @@ export default function ReportForm() {
       return;
     }
 
-    try {
-      let mediaURLs = [];
-      if (form.media.length > 0) {
-        const mediaForm = new FormData();
-        form.media.forEach((file) => mediaForm.append("media", file));
-        const mediaRes = await axios.post(
-          "http://localhost:5000/api/media",
-          mediaForm,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "multipart/form-data",
-            },
-          }
-        );
-        mediaURLs = mediaRes.data.uploaded.map((f) => ({
-          url: f.url,
-          mime: f.mime,
-        }));
-      }
-
-      const payload =
-        locationOption === "address"
-          ? { ...form, media: mediaURLs, address: manualAddress }
-          : {
-              ...form,
-              media: mediaURLs,
-              location: {
-                type: "Point",
-                coordinates: [position[1], position[0]],
-              },
-              address: locationOption === "live" ? liveAddress : "",
-            };
-
-      const res = await axios.post(
-        "http://localhost:5000/api/reports",
-        payload,
+    // -------------------------------
+    // 1️⃣ Upload Media (if any)
+    // -------------------------------
+    let mediaURLs = [];
+    if (form.media.length > 0) {
+      const mediaForm = new FormData();
+      form.media.forEach((file) => mediaForm.append("media", file));
+      const mediaRes = await axios.post(
+        "http://localhost:5000/api/media",
+        mediaForm,
         {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "multipart/form-data",
+          },
         }
       );
+      mediaURLs = mediaRes.data.uploaded.map((f) => ({
+        url: f.url,
+        mime: f.mime,
+      }));
+    }
 
-      const reportId = res.data._id;
+    // -------------------------------
+    // 2️⃣ Prepare Payload
+    // -------------------------------
+    const payload =
+      locationOption === "address"
+        ? { ...form, media: mediaURLs, address: manualAddress }
+        : {
+            ...form,
+            media: mediaURLs,
+            location: {
+              type: "Point",
+              coordinates: [position[1], position[0]],
+            },
+            address: locationOption === "live" ? liveAddress : "",
+          };
 
-      if (questionText.trim()) {
+    // -------------------------------
+    // 3️⃣ Submit Report
+    // -------------------------------
+    const res = await axios.post("http://localhost:5000/api/reports", payload, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    // Correct report ID
+    const reportId = res.data.report._id;
+
+    // -------------------------------
+    // 4️⃣ Optional Question to Officer
+    // -------------------------------
+    if (questionText.trim()) {
+      try {
         await axios.post(
-          `http://localhost:5000/api/votesComments/${reportId}/comment`,
+          `http://localhost:5000/api/reports/${reportId}/comments`,
           { message: questionText },
           { headers: { Authorization: `Bearer ${token}` } }
         );
+      } catch (commentErr) {
+        console.warn("Failed to submit officer question:", commentErr);
       }
-
-      setSuccess("Report submitted successfully!");
-      setForm({
-        title: "",
-        description: "",
-        category: "",
-        severity: 1,
-        media: [],
-      });
-      setPosition(null);
-      setManualAddress("");
-      setLiveAddress("");
-      setQuestionText("");
-      setLocationOption("map");
-
-      setTimeout(() => navigate(`/reports/${reportId}`), 1500);
-    } catch (err) {
-      console.error("Create report error:", err);
-      setError(err.response?.data?.message || "Failed to submit report.");
-    } finally {
-      setLoading(false);
     }
-  };
+
+    // -------------------------------
+    // 5️⃣ Reset Form
+    // -------------------------------
+    setSuccess("Report submitted successfully!");
+    setForm({
+      title: "",
+      description: "",
+      category: "",
+      severity: 1,
+      media: [],
+    });
+    setPosition(null);
+    setManualAddress("");
+    setLiveAddress("");
+    setQuestionText("");
+    setLocationOption("map");
+
+    // Navigate to the report detail page
+    setTimeout(() => navigate(`/reports/${reportId}`), 1500);
+  } catch (err) {
+    console.error("Create report error:", err);
+    setError(err.response?.data?.message || "Failed to submit report.");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   return (
     <div className="max-w-4xl mx-auto p-4">

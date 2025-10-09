@@ -23,7 +23,8 @@ export default function ReportDetail() {
   const [loading, setLoading] = useState(true);
   const [commentText, setCommentText] = useState("");
   const [address, setAddress] = useState("");
-  const [statusNote, setStatusNote] = useState("");
+  const [statusNote, setStatusNote] = useState(""); // For officer updates
+  const [adminNote, setAdminNote] = useState(""); // For admin verification
   const [officerFiles, setOfficerFiles] = useState([]); // selected files
   const [uploadedUrls, setUploadedUrls] = useState([]); // Cloudinary uploaded URLs
 
@@ -80,6 +81,33 @@ export default function ReportDetail() {
       setLoading(false);
     }
   };
+ 
+  const handleAdminDecision = async (isApproved) => {
+    if (!adminNote.trim()) {
+      alert("Please provide a note for admin verification.");
+      return;
+    }
+
+    try {
+     await API.post(`/reports/${id}/status`, {
+       adminApprove: true,
+       verified: isApproved,
+       note: adminNote,
+       status: report.pendingStatus || report.status, // send valid status
+     });
+
+
+      alert(
+        `Report has been ${isApproved ? "approved" : "rejected"} by admin.`
+      );
+      setAdminNote("");
+      fetchReport();
+    } catch (err) {
+      console.error("Admin verification error:", err);
+      alert(err.response?.data?.message || "Failed to verify report.");
+    }
+  };
+
 
   useEffect(() => {
     fetchReport();
@@ -150,33 +178,45 @@ export default function ReportDetail() {
     setUploadedUrls((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const updateStatusWithNote = async (status) => {
-    if (!statusNote.trim()) {
-      alert("Please provide a note while updating status.");
-      return;
-    }
-    if (uploadedUrls.length === 0) {
-      alert("Please upload at least one proof media file.");
-      return;
+const updateStatusWithNote = async (status) => {
+  if (!statusNote.trim()) {
+    alert("Please provide a note while updating status.");
+    return;
+  }
+  if (uploadedUrls.length === 0) {
+    alert("Please upload at least one proof media file.");
+    return;
+  }
+
+  try {
+    // Send to backend
+    await API.post(`/reports/${id}/status`, {
+      status,
+      note: statusNote,
+      media: uploadedUrls,
+    });
+
+    // Show proper message
+    if (status === "Resolved" || status === "Rejected") {
+      alert(
+        `Status updated to "${status}". Awaiting admin verification before finalizing.`
+      );
+    } else {
+      alert(`Status updated to "${status}" successfully!`);
     }
 
-    try {
-      await API.post(`/reports/${id}/status`, {
-        status,
-        note: statusNote,
-        media: uploadedUrls,
-      });
+    // Reset fields
+    setStatusNote("");
+    setOfficerFiles([]);
+    setUploadedUrls([]);
+    fetchReport();
+  } catch (err) {
+    console.error("Status update error:", err);
+    alert(err.response?.data?.message || "Status update failed");
+  }
+};
 
-      alert("Status updated successfully with proof media!");
-      setStatusNote("");
-      setOfficerFiles([]);
-      setUploadedUrls([]);
-      fetchReport();
-    } catch (err) {
-      console.error("Status update error:", err);
-      alert(err.response?.data?.message || "Status update failed");
-    }
-  };
+
 
   // ------------------ UI ------------------
   if (loading)
@@ -328,83 +368,135 @@ export default function ReportDetail() {
       )}
 
       {/* ---------------- Officer Status Controls ---------------- */}
-      {canUpdateStatus && report.status !== "Resolved" && (
-        <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3">
-          <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-            Update Status (Note + Proof Required)
-          </h3>
-
-          <textarea
-            placeholder="Enter a note about the update"
-            value={statusNote}
-            onChange={(e) => setStatusNote(e.target.value)}
-            className="w-full border p-2 rounded focus:outline-none focus:ring focus:ring-blue-400 dark:bg-gray-800 dark:text-white"
-            rows={3}
-          />
-
-          <input
-            type="file"
-            multiple
-            onChange={handleOfficerFileChange}
-            className="mt-2 border p-2 rounded w-full dark:bg-gray-800 dark:text-white"
-          />
-
-          {/* Officer Media Preview */}
-          {uploadedUrls.length > 0 && (
-            <div className="flex flex-wrap gap-3 mt-2">
-              {uploadedUrls.map((m, index) =>
-                m.mime.startsWith("image/") ? (
-                  <div key={index} className="relative">
-                    <img
-                      src={m.url}
-                      alt="preview"
-                      onClick={() => window.open(m.url, "_blank")}
-                      className="w-32 h-32 object-cover rounded border cursor-pointer hover:scale-105 transition"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeOfficerFile(index)}
-                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center"
-                    >
-                      &times;
-                    </button>
-                  </div>
-                ) : (
-                  <div key={index} className="relative">
-                    <video
-                      src={m.url}
-                      controls
-                      onClick={() => window.open(m.url, "_blank")}
-                      className="w-40 h-32 object-cover rounded border cursor-pointer hover:scale-105 transition"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeOfficerFile(index)}
-                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center"
-                    >
-                      &times;
-                    </button>
-                  </div>
-                )
-              )}
-            </div>
-          )}
-
-          <div className="flex flex-wrap gap-2 mt-3">
-            {availableStatuses
-              .filter((st) => st !== report.status && st !== "Open")
-              .map((st) => (
-                <Button
-                  key={st}
-                  onClick={() => updateStatusWithNote(st)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white"
-                >
-                  Mark as {st}
-                </Button>
-              ))}
+      {canUpdateStatus ? (
+        report.pendingStatus ? (
+          <div className="bg-yellow-100 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 rounded-xl p-4 shadow-lg">
+            <p className="font-semibold">
+              Status "{report.pendingStatus}" submitted. Awaiting admin
+              approval.
+            </p>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+              Update Status (Note + Proof Required)
+            </h3>
+
+            <textarea
+              placeholder="Enter a note about the update"
+              value={statusNote}
+              onChange={(e) => setStatusNote(e.target.value)}
+              className="w-full border p-2 rounded focus:outline-none focus:ring focus:ring-blue-400 dark:bg-gray-800 dark:text-white"
+              rows={3}
+            />
+
+            <input
+              type="file"
+              multiple
+              onChange={handleOfficerFileChange}
+              className="mt-2 border p-2 rounded w-full dark:bg-gray-800 dark:text-white"
+            />
+
+            {/* Officer Media Preview */}
+            {uploadedUrls.length > 0 && (
+              <div className="flex flex-wrap gap-3 mt-2">
+                {uploadedUrls.map((m, index) =>
+                  m.mime.startsWith("image/") ? (
+                    <div key={index} className="relative">
+                      <img
+                        src={m.url}
+                        alt="preview"
+                        onClick={() => window.open(m.url, "_blank")}
+                        className="w-32 h-32 object-cover rounded border cursor-pointer hover:scale-105 transition"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeOfficerFile(index)}
+                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  ) : (
+                    <div key={index} className="relative">
+                      <video
+                        src={m.url}
+                        controls
+                        onClick={() => window.open(m.url, "_blank")}
+                        className="w-40 h-32 object-cover rounded border cursor-pointer hover:scale-105 transition"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeOfficerFile(index)}
+                        className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+
+           <div className="flex flex-wrap gap-2 mt-3">
+  {availableStatuses
+    .filter((st) => st !== report.status && st !== "Open") // only hide current + Open
+    .map((st) => (
+      <Button
+        key={st}
+        onClick={() => updateStatusWithNote(st)}
+        className={
+          st === "Resolved"
+            ? "bg-green-600 hover:bg-green-700 text-white"
+            : st === "Rejected"
+            ? "bg-red-600 hover:bg-red-700 text-white"
+            : st === "In Progress"
+            ? "bg-blue-600 hover:bg-blue-700 text-white"
+            : "bg-yellow-500 hover:bg-yellow-600 text-white"
+        }
+      >
+        Mark as {st}
+      </Button>
+    ))}
+</div>
+
+          </div>
+        )
+      ) : null}
+
+     {role === "admin" && report.pendingStatus && report.adminVerification?.verified === null && (
+  <div className="bg-yellow-50 dark:bg-yellow-900 p-4 rounded-xl shadow-lg space-y-3">
+    <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+      Admin Verification Required
+    </h3>
+    <p>
+      Officer proposed status: <strong>{report.pendingStatus}</strong>
+    </p>
+    <textarea
+      placeholder="Enter a note for approval/rejection"
+      value={adminNote}
+      onChange={(e) => setAdminNote(e.target.value)}
+      className="w-full border p-2 rounded focus:outline-none focus:ring focus:ring-yellow-400 dark:bg-gray-800 dark:text-white"
+      rows={3}
+    />
+
+    <div className="flex gap-2">
+      <Button
+        onClick={() => handleAdminDecision(true)}
+        className="bg-green-600 hover:bg-green-700 text-white"
+      >
+        Approve
+      </Button>
+      <Button
+        onClick={() => handleAdminDecision(false)}
+        className="bg-red-600 hover:bg-red-700 text-white"
+      >
+        Reject
+      </Button>
+    </div>
+  </div>
+)}
+
 
       {/* ---------------- Status History ---------------- */}
       {report.statusHistory?.length > 0 && (
@@ -475,43 +567,63 @@ export default function ReportDetail() {
         </h2>
         <div className="space-y-2">
           {report.comments?.length > 0 ? (
-            report.comments.map((c) => (
-              <div
-                key={c._id}
-                className="p-3 bg-gray-100 dark:bg-gray-700 rounded shadow-sm"
-              >
-                <p className="text-gray-700 dark:text-gray-300">{c.message}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  {c.by?.name || "Citizen"} |{" "}
-                  {new Date(c.createdAt).toLocaleString()}
-                </p>
-                {c.reply && (
-                  <p className="mt-1 pl-4 border-l-2 border-gray-300 text-gray-600 dark:text-gray-400">
-                    Reply by {c.repliedBy?.name}: {c.reply}
+            report.comments.map((c) => {
+              const isAdminComment = c.by?.role === "admin";
+              const officerCannotReply = role === "officer" && isAdminComment;
+
+              return (
+                <div
+                  key={c._id}
+                  className={`p-3 rounded shadow-sm ${
+                    isAdminComment
+                      ? "bg-yellow-50 dark:bg-yellow-900"
+                      : "bg-gray-100 dark:bg-gray-700"
+                  }`}
+                >
+                  <p className="text-gray-700 dark:text-gray-300">
+                    {c.message}
                   </p>
-                )}
-                {canReply && !c.reply && (
-                  <div className="mt-1 flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="Write a reply..."
-                      className="flex-1 border p-1 rounded"
-                      onChange={(e) => (c.replyTemp = e.target.value)}
-                    />
-                    <Button
-                      onClick={() => replyToComment(c._id, c.replyTemp)}
-                      className="bg-purple-600 hover:bg-purple-700 text-white"
-                    >
-                      Reply
-                    </Button>
-                  </div>
-                )}
-              </div>
-            ))
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    {c.by?.name || "Citizen"} |{" "}
+                    {new Date(c.createdAt).toLocaleString()}
+                  </p>
+
+                  {c.reply && (
+                    <p className="mt-1 pl-4 border-l-2 border-gray-300 text-gray-600 dark:text-gray-400">
+                      Reply by {c.repliedBy?.name}: {c.reply}
+                    </p>
+                  )}
+
+                  {!officerCannotReply && canReply && !c.reply && (
+                    <div className="mt-1 flex gap-2">
+                      <input
+                        type="text"
+                        placeholder="Write a reply..."
+                        className="flex-1 border p-1 rounded"
+                        onChange={(e) => (c.replyTemp = e.target.value)}
+                      />
+                      <Button
+                        onClick={() => replyToComment(c._id, c.replyTemp)}
+                        className="bg-purple-600 hover:bg-purple-700 text-white"
+                      >
+                        Reply
+                      </Button>
+                    </div>
+                  )}
+
+                  {officerCannotReply && role === "officer" && (
+                    <p className="text-sm text-gray-500 dark:text-gray-400 italic mt-1">
+                      Officers cannot reply to admin comments.
+                    </p>
+                  )}
+                </div>
+              );
+            })
           ) : (
             <p className="text-gray-500">No comments yet.</p>
           )}
         </div>
+
         {canComment && (
           <div className="mt-3 flex gap-2">
             <input

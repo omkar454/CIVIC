@@ -179,4 +179,61 @@ router.get("/analytics", auth("admin"), async (req, res) => {
   }
 });
 
+router.post("/verify-report/:id", auth("admin"), async (req, res) => {
+  try {
+    const { approve, note } = req.body; // approve: true/false
+    if (approve === undefined)
+      return res.status(400).json({ message: "Approval decision required" });
+
+    const report =
+      (await Report.findById(req.params.id)) ||
+      (await TextAddressReport.findById(req.params.id));
+
+    if (!report) return res.status(404).json({ message: "Report not found" });
+
+    if (!["Resolved", "Rejected"].includes(report.status)) {
+      return res
+        .status(400)
+        .json({ message: "Report status not eligible for admin verification" });
+    }
+
+    // Update admin verification
+    report.adminVerification.verified = approve;
+    report.adminVerification.note = note || "";
+    report.adminVerification.verifiedAt = new Date();
+    report.adminVerification.history.push({
+      admin: req.user._id,
+      action: approve ? "approved" : "rejected",
+      note: note || "",
+      createdAt: new Date(),
+    });
+
+    // Reassign to queue if rejected
+    if (!approve) {
+      report.assignedTo = null;
+      report.statusHistory.push({
+        status: report.status,
+        by: req.user._id,
+        note: `Admin rejected officer update: ${note || "No note provided"}`,
+        media: [],
+        at: new Date(),
+      });
+    }
+
+    await report.save();
+
+    res.json({
+      message: approve
+        ? "Report approved successfully"
+        : "Report rejected, reassigned to officer queue",
+      report,
+    });
+  } catch (err) {
+    console.error("Admin verify report error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+
 export default router;

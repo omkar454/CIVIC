@@ -8,7 +8,6 @@ import {
   Marker,
   Popup,
   LayerGroup,
-  Tooltip,
   useMapEvents,
 } from "react-leaflet";
 import L from "leaflet";
@@ -103,6 +102,7 @@ export default function OfficerQueue() {
     }
   }, [token, role, navigate]);
 
+  // ------------------ Fetch Officer Queue ------------------
   const fetchQueue = async () => {
     setLoading(true);
     try {
@@ -116,17 +116,39 @@ export default function OfficerQueue() {
         { headers: { Authorization: `Bearer ${token}` } }
       );
 
-      // Ensure res.data is array
-      const data = Array.isArray(res.data) ? res.data : [];
+      let data = Array.isArray(res.data) ? res.data : [];
 
-      const sorted = data
-        .map((r) => ({
+      // Determine display based on status & admin verification
+      data = data.map((r) => {
+        const pendingAdmin = r.adminVerification?.verified === null;
+        const adminRejected = r.adminVerification?.verified === false;
+        const adminApproved = r.adminVerification?.verified === true;
+
+        // Only include in officer queue if:
+        // - Status not Resolved/Rejected OR
+        // - Pending admin OR
+        // - Admin rejected
+        const showInQueue =
+          r.status === "Resolved" || r.status === "Rejected"
+            ? pendingAdmin || adminRejected
+            : true;
+
+        return {
           ...r,
           department: categoryToDepartment[r.category] || "General",
           priorityScore: (r.severity || 0) * 2 + (r.votes || 0),
           lat: r.lat,
           lng: r.lng,
-        }))
+          pendingAdmin,
+          showInQueue,
+          adminRejected,
+          adminApproved,
+          adminNote: r.adminVerification?.note || "",
+        };
+      });
+
+      const sorted = data
+        .filter((r) => r.showInQueue)
         .sort((a, b) => b.priorityScore - a.priorityScore);
 
       setReports(sorted);
@@ -143,7 +165,7 @@ export default function OfficerQueue() {
     if (token && (role === "officer" || role === "admin")) fetchQueue();
   }, [token, role]);
 
-  // Filters
+  // ------------------ Filters ------------------
   useEffect(() => {
     let temp = [...reports];
     if (filters.category)
@@ -154,26 +176,17 @@ export default function OfficerQueue() {
     setFilteredReports(temp);
   }, [filters, reports]);
 
-  const updateStatus = async (id, newStatus) => {
-    try {
-      await axios.post(
-        `http://localhost:5000/api/reports/${id}/status`,
-        { status: newStatus },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      fetchQueue();
-    } catch (err) {
-      console.error(err);
-      alert(err.response?.data?.message || "Error updating status");
-    }
-  };
-
   if (loading) return <p className="text-center mt-8">Loading queue...</p>;
   if (!reports.length)
     return <p className="text-center mt-8">No reports in queue.</p>;
 
-  const reportsWithCoords = filteredReports.filter((r) => r.lat && r.lng);
-  const reportsNoCoords = filteredReports.filter((r) => !r.lat || !r.lng);
+  // ------------------ Heatmap Data ------------------
+  const reportsWithCoords = filteredReports.filter(
+    (r) => r.lat && r.lng && !r.adminApproved
+  );
+  const reportsNoCoords = filteredReports.filter(
+    (r) => !r.lat || !r.lng || r.adminApproved
+  );
 
   const maxPriority = Math.max(
     ...reportsWithCoords.map((r) => r.priorityScore),
@@ -184,20 +197,8 @@ export default function OfficerQueue() {
     <div className="max-w-6xl mx-auto space-y-6">
       <h2 className="text-xl font-bold mb-4">Officer Queue (by Priority)</h2>
 
-      {/* Filters */}
+      {/* ---------------- Filters ---------------- */}
       <div className="flex gap-2 mb-4 flex-wrap">
-        {/* <select
-          className="border p-2"
-          value={filters.category}
-          onChange={(e) => setFilters({ ...filters, category: e.target.value })}
-        >
-          <option value="">All Categories</option>
-          {Object.keys(categoryToDepartment).map((cat) => (
-            <option key={cat} value={cat}>
-              {cat.charAt(0).toUpperCase() + cat.slice(1)}
-            </option>
-          ))}
-        </select> */}
         <select
           className="border p-2"
           value={filters.status}
@@ -208,6 +209,7 @@ export default function OfficerQueue() {
           <option value="Acknowledged">Acknowledged</option>
           <option value="In Progress">In Progress</option>
           <option value="Resolved">Resolved</option>
+          <option value="Rejected">Rejected</option>
         </select>
         <select
           className="border p-2"
@@ -229,6 +231,7 @@ export default function OfficerQueue() {
         </button>
       </div>
 
+      {/* ---------------- Heatmap ---------------- */}
       {reportsWithCoords.length > 0 && (
         <div className="mb-6 relative">
           <h3 className="text-lg font-semibold mb-2 text-gray-800 dark:text-gray-200">
@@ -255,7 +258,7 @@ export default function OfficerQueue() {
                 options={{ radius: 25, blur: 15, maxZoom: 17 }}
               />
 
-              {/* Tooltip markers for each report */}
+              {/* Markers */}
               {reportsWithCoords.map((r) => (
                 <Marker key={r._id} position={[r.lat, r.lng]} icon={redIcon}>
                   <Popup>
@@ -270,6 +273,11 @@ export default function OfficerQueue() {
                       {r.priorityScore}
                       <br />
                       Status: {r.status}
+                      {r.adminRejected && (
+                        <span className="ml-1 text-red-600 italic">
+                          (Rejected by Admin: {r.adminNote})
+                        </span>
+                      )}
                       <br />
                       <Link
                         to={`/reports/${r._id}`}
@@ -282,21 +290,22 @@ export default function OfficerQueue() {
                 </Marker>
               ))}
             </MapContainer>
-            {/* Legend */}
+
+            {/* Heatmap Legend */}
             <HeatmapLegend maxScore={maxPriority} />
           </div>
         </div>
       )}
 
-      {/* Reports without coordinates */}
+      {/* ---------------- Reports without coordinates ---------------- */}
       {reportsNoCoords.length > 0 && (
         <div className="mb-6 bg-white shadow rounded p-4">
           <h3 className="text-lg font-semibold mb-2 text-gray-800 dark:text-gray-200">
             Reports Not Displayed on Heatmap
           </h3>
           <p className="text-sm text-gray-600 mb-3">
-            These reports do not have valid latitude and longitude coordinates
-            but are still considered for administrative purposes.
+            These reports do not have valid latitude/longitude or are admin
+            approved.
           </p>
           <ul className="list-disc list-inside text-sm text-gray-700">
             {reportsNoCoords.map((r) => (
@@ -304,13 +313,18 @@ export default function OfficerQueue() {
                 <strong>{r.title}</strong> - Category: {r.category} |
                 Department: {r.department} | Severity: {r.severity} | Status:{" "}
                 {r.status}
+                {r.adminRejected && (
+                  <span className="ml-1 text-red-600 italic">
+                    (Rejected by Admin: {r.adminNote})
+                  </span>
+                )}
               </li>
             ))}
           </ul>
         </div>
       )}
 
-      {/* Reports List */}
+      {/* ---------------- Queue Cards ---------------- */}
       {filteredReports.map((r) => (
         <div key={r._id} className="bg-white shadow p-4 rounded space-y-2">
           <h3 className="font-bold text-lg">{r.title}</h3>
@@ -319,6 +333,16 @@ export default function OfficerQueue() {
             Category: {r.category} | Department: {r.department} | Severity:{" "}
             {r.severity} | Votes: {r.votes} | Priority: {r.priorityScore} |
             Status: {r.status}
+            {r.pendingAdmin && (
+              <span className="ml-2 text-yellow-700 italic">
+                (Waiting for admin approval)
+              </span>
+            )}
+            {r.adminRejected && (
+              <span className="ml-2 text-red-600 italic">
+                (Rejected by Admin: {r.adminNote})
+              </span>
+            )}
           </p>
           <p className="text-sm text-gray-500">
             Reported by: {r.reporter?.name} ({r.reporter?.email})

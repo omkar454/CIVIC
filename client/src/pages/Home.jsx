@@ -129,11 +129,49 @@ export default function Home() {
     })();
   }, [token, role, userDepartment]);
 
-  // Heatmap points
+  // Heatmap points logic
   const heatmapPoints = useMemo(
     () =>
       reports
-        .filter((r) => r.lat && r.lng)
+        .filter((r) => {
+          // Only geocoded reports
+          if (!r.lat || !r.lng) return false;
+
+          // Pending admin approval → include
+          if (
+            ["Resolved", "Rejected"].includes(r.status) &&
+            r.adminVerification?.verified === null
+          ) {
+            return true;
+          }
+
+          // Admin approved officer action → exclude
+          if (
+            ["Resolved", "Rejected"].includes(r.status) &&
+            r.adminVerification?.verified === true
+          ) {
+            return false;
+          }
+
+          // Admin disapproved officer action → re-add to heatmap
+          if (
+            ["Resolved", "Rejected"].includes(r.status) &&
+            r.adminVerification?.verified === false
+          ) {
+            return true;
+          }
+
+          // Open/In Progress → include
+          if (
+            r.status === "Open" ||
+            r.status === "Acknowledged" ||
+            r.status === "In Progress"
+          ) {
+            return true;
+          }
+
+          return false;
+        })
         .map((r) => [r.lat, r.lng, r.severity / 5]),
     [reports]
   );
@@ -370,6 +408,160 @@ export default function Home() {
           </div>
         )}
       </div>
+      {/* ---------------- Role-specific Sections ---------------- */}
+      {/* Citizens */}
+      {role === "citizen" && (
+        <div className="mb-6 grid md:grid-cols-2 gap-4">
+          <div className="bg-green-50 dark:bg-green-900 p-4 rounded shadow">
+            <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">
+              Resolved Complaints
+            </h3>
+            {reports.filter(
+              (r) =>
+                r.status === "Resolved" &&
+                r.adminVerification?.verified === true
+            ).length === 0 ? (
+              <p className="text-gray-600 dark:text-gray-400">
+                No resolved reports.
+              </p>
+            ) : (
+              <ul className="list-disc list-inside text-gray-700 dark:text-gray-300">
+                {reports
+                  .filter(
+                    (r) =>
+                      r.status === "Resolved" &&
+                      r.adminVerification?.verified === true
+                  )
+                  .map((r) => (
+                    <li key={r._id}>
+                      <strong>{r.title}</strong> - Note:{" "}
+                      {r.adminVerification.note || "No note"}
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </div>
+
+          <div className="bg-red-50 dark:bg-red-900 p-4 rounded shadow">
+            <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">
+              Rejected Complaints
+            </h3>
+            {reports.filter(
+              (r) =>
+                r.status === "Rejected" &&
+                r.adminVerification?.verified === false
+            ).length === 0 ? (
+              <p className="text-gray-600 dark:text-gray-400">
+                No rejected reports.
+              </p>
+            ) : (
+              <ul className="list-disc list-inside text-gray-700 dark:text-gray-300">
+                {reports
+                  .filter(
+                    (r) =>
+                      r.status === "Rejected" &&
+                      r.adminVerification?.verified === false
+                  )
+                  .map((r) => (
+                    <li key={r._id}>
+                      <strong>{r.title}</strong> - Note:{" "}
+                      {r.adminVerification.note || "No note"}
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Officers */}
+      {role === "officer" && (
+        <div className="mb-6 grid md:grid-cols-2 gap-4">
+          {/* Awaiting Admin Approval */}
+          <div className="bg-yellow-50 dark:bg-yellow-900 p-4 rounded shadow">
+            <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">
+              Awaiting Admin Approval
+            </h3>
+            {reports.filter(
+              (r) =>
+                ["Resolved", "Rejected"].includes(r.status) &&
+                r.adminVerification?.verified === null
+            ).length === 0 ? (
+              <p className="text-gray-600 dark:text-gray-400">
+                No pending reports for admin verification.
+              </p>
+            ) : (
+              <ul className="list-disc list-inside text-gray-700 dark:text-gray-300">
+                {reports
+                  .filter(
+                    (r) =>
+                      ["Resolved", "Rejected"].includes(r.status) &&
+                      r.adminVerification?.verified === null
+                  )
+                  .map((r) => (
+                    <li key={r._id}>
+                      <strong>{r.title}</strong> - Status: {r.status} | Admin
+                      Note: {r.adminVerification?.note || "No note"}
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Reports Admin Verified */}
+          <div className="bg-blue-50 dark:bg-blue-900 p-4 rounded shadow">
+            <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">
+              Reports Admin Verified
+            </h3>
+            {reports.filter((r) => r.adminVerification?.verified === true)
+              .length === 0 ? (
+              <p className="text-gray-600 dark:text-gray-400">
+                No verified reports yet.
+              </p>
+            ) : (
+              <ul className="list-disc list-inside text-gray-700 dark:text-gray-300">
+                {reports
+                  .filter((r) => r.adminVerification?.verified === true)
+                  .map((r) => (
+                    <li key={r._id}>
+                      <strong>{r.title}</strong> - Status: {r.status} | Admin
+                      Note: {r.adminVerification?.note || "No note"}
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </div>
+        </div>
+      )}
+
+    {role === "admin" && (
+  <div className="mb-6 bg-yellow-50 dark:bg-yellow-900 p-4 rounded shadow">
+    <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">
+      Pending Verifications
+    </h3>
+    {reports.filter(r => r.adminVerification?.verified === null).length === 0 ? (
+      <p className="text-gray-600 dark:text-gray-400">No pending verifications.</p>
+    ) : (
+      <ul className="list-disc list-inside text-gray-700 dark:text-gray-300">
+        {reports
+          .filter(r => r.adminVerification?.verified === null)
+          .map(r => (
+            <li key={r._id} className="mb-2">
+              <Link
+                to={`/reports/${r._id}`}
+                className="text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                {r.title}
+              </Link>{" "}
+              - Status: {r.status} | Officer Note:{" "}
+              {r.statusHistory?.[r.statusHistory.length - 1]?.note || "No note"}
+            </li>
+          ))}
+      </ul>
+    )}
+  </div>
+)}
+
 
       {/* Latest Reports */}
       <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200">
