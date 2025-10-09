@@ -2,7 +2,13 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
-import { MapContainer, TileLayer, Marker, useMapEvents } from "react-leaflet";
+import {
+  MapContainer,
+  TileLayer,
+  Marker,
+  Polygon,
+  useMapEvents,
+} from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import HeatmapLayer from "../components/HeatMapLayer";
@@ -17,11 +23,64 @@ const redIcon = new L.Icon({
   iconAnchor: [12, 41],
 });
 
+// -----------------------------
+// Bandra polygon (lat, lng) - reasonably detailed approximation
+// You can replace these with an official polygon if available.
+const BANDRA_BOUNDARY = [
+  [19.0804, 72.8237],
+  [19.0801, 72.8519],
+  [19.0692, 72.8523],
+  [19.0624, 72.8571],
+  [19.0443, 72.8539],
+  [19.0369, 72.848],
+  [19.0348, 72.8336],
+  [19.0421, 72.8157],
+  [19.0554, 72.8095],
+  [19.0707, 72.8168],
+];
+
+// Ray-casting point-in-polygon (works for our small polygon)
+function isWithinBandra(lat, lng) {
+  const x = lng;
+  const y = lat;
+  let inside = false;
+  for (
+    let i = 0, j = BANDRA_BOUNDARY.length - 1;
+    i < BANDRA_BOUNDARY.length;
+    j = i++
+  ) {
+    const xi = BANDRA_BOUNDARY[i][1],
+      yi = BANDRA_BOUNDARY[i][0];
+    const xj = BANDRA_BOUNDARY[j][1],
+      yj = BANDRA_BOUNDARY[j][0];
+
+    const intersect =
+      yi > y !== yj > y &&
+      x < ((xj - xi) * (y - yi)) / (yj - yi + Number.EPSILON) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
 // Component to handle map clicks
-function LocationPicker({ setPosition }) {
+function LocationPicker({ setPosition, setError }) {
   useMapEvents({
     click(e) {
-      setPosition([e.latlng.lat, e.latlng.lng]);
+      const lat = e.latlng.lat;
+      const lng = e.latlng.lng;
+
+      // Validate Bandra polygon at marking time
+      if (!isWithinBandra(lat, lng)) {
+        // Inform user and do not mark outside Bandra
+        setError(
+          "❌ Selected location is outside Bandra municipal limits. Please choose a location inside the blue boundary."
+        );
+        return;
+      }
+
+      // Clear any previous error and set position
+      setError("");
+      setPosition([lat, lng]);
     },
   });
   return null;
@@ -92,7 +151,16 @@ export default function ReportForm() {
         async (pos) => {
           const lat = pos.coords.latitude;
           const lng = pos.coords.longitude;
+
+          // Validate live location against Bandra polygon
+          if (!isWithinBandra(lat, lng)) {
+            setError("❌ Live location is outside Bandra municipal limits.");
+            setPosition(null);
+            return;
+          }
+
           setPosition([lat, lng]);
+          setError("");
           try {
             const res = await axios.get(
               `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`
@@ -428,7 +496,19 @@ export default function ReportForm() {
                   style={{ height: "100%", width: "100%" }}
                 >
                   <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-                  <LocationPicker setPosition={setPosition} />
+                  {/* Bandra polygon outline */}
+                  <Polygon
+                    positions={BANDRA_BOUNDARY}
+                    pathOptions={{
+                      color: "blue",
+                      weight: 2,
+                      fillOpacity: 0.05,
+                    }}
+                  />
+                  <LocationPicker
+                    setPosition={setPosition}
+                    setError={setError}
+                  />
                   {existingReports.length > 0 && (
                     <HeatmapLayer
                       points={existingReports.map((r) => [
@@ -482,7 +562,7 @@ export default function ReportForm() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-green-600 text-white py-2 rounded-lg shadow hover:bg-green-700 transition disabled:opacity-50"
+            className="w-full bg-green-600 text-white py-2 rounded-lg shadow:hover:bg-green-700 transition disabled:opacity-50"
           >
             {loading ? "Submitting..." : "Submit Report"}
           </button>
