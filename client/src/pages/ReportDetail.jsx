@@ -81,7 +81,7 @@ export default function ReportDetail() {
       setLoading(false);
     }
   };
- 
+
   const handleAdminDecision = async (isApproved) => {
     if (!adminNote.trim()) {
       alert("Please provide a note for admin verification.");
@@ -89,13 +89,12 @@ export default function ReportDetail() {
     }
 
     try {
-     await API.post(`/reports/${id}/status`, {
-       adminApprove: true,
-       verified: isApproved,
-       note: adminNote,
-       status: report.pendingStatus || report.status, // send valid status
-     });
-
+      await API.post(`/reports/${id}/status`, {
+        adminApprove: true,
+        verified: isApproved,
+        note: adminNote,
+        status: report.pendingStatus || report.status, // send valid status
+      });
 
       alert(
         `Report has been ${isApproved ? "approved" : "rejected"} by admin.`
@@ -107,7 +106,6 @@ export default function ReportDetail() {
       alert(err.response?.data?.message || "Failed to verify report.");
     }
   };
-
 
   useEffect(() => {
     fetchReport();
@@ -178,45 +176,43 @@ export default function ReportDetail() {
     setUploadedUrls((prev) => prev.filter((_, i) => i !== index));
   };
 
-const updateStatusWithNote = async (status) => {
-  if (!statusNote.trim()) {
-    alert("Please provide a note while updating status.");
-    return;
-  }
-  if (uploadedUrls.length === 0) {
-    alert("Please upload at least one proof media file.");
-    return;
-  }
-
-  try {
-    // Send to backend
-    await API.post(`/reports/${id}/status`, {
-      status,
-      note: statusNote,
-      media: uploadedUrls,
-    });
-
-    // Show proper message
-    if (status === "Resolved" || status === "Rejected") {
-      alert(
-        `Status updated to "${status}". Awaiting admin verification before finalizing.`
-      );
-    } else {
-      alert(`Status updated to "${status}" successfully!`);
+  const updateStatusWithNote = async (status) => {
+    if (!statusNote.trim()) {
+      alert("Please provide a note while updating status.");
+      return;
+    }
+    if (uploadedUrls.length === 0) {
+      alert("Please upload at least one proof media file.");
+      return;
     }
 
-    // Reset fields
-    setStatusNote("");
-    setOfficerFiles([]);
-    setUploadedUrls([]);
-    fetchReport();
-  } catch (err) {
-    console.error("Status update error:", err);
-    alert(err.response?.data?.message || "Status update failed");
-  }
-};
+    try {
+      // Send to backend
+      await API.post(`/reports/${id}/status`, {
+        status,
+        note: statusNote,
+        media: uploadedUrls,
+      });
 
+      // Show proper message
+      if (status === "Resolved" || status === "Rejected") {
+        alert(
+          `Status updated to "${status}". Awaiting admin verification before finalizing.`
+        );
+      } else {
+        alert(`Status updated to "${status}" successfully!`);
+      }
 
+      // Reset fields
+      setStatusNote("");
+      setOfficerFiles([]);
+      setUploadedUrls([]);
+      fetchReport();
+    } catch (err) {
+      console.error("Status update error:", err);
+      alert(err.response?.data?.message || "Status update failed");
+    }
+  };
 
   // ------------------ UI ------------------
   if (loading)
@@ -271,9 +267,15 @@ const updateStatusWithNote = async (status) => {
           {new Date(report.createdAt).toLocaleString()}
         </p>
         <p className="text-sm text-gray-500">
-          Department: {report.department || "N/A"} | Category:{" "}
-          {report.category || "N/A"} | Severity Level:{" "}
-          {report.severity || "N/A"}
+          Department:{" "}
+          {report.transfer?.status === "approved"
+            ? report.transfer.newDepartment
+            : report.department || "N/A"}{" "}
+          | Category:{" "}
+          {report.transfer?.status === "approved"
+            ? report.transfer.newCategory
+            : report.category || "N/A"}{" "}
+          | Severity Level: {report.severity || "N/A"}
         </p>
 
         {canVote && (
@@ -290,7 +292,15 @@ const updateStatusWithNote = async (status) => {
           </p>
         )}
       </div>
-
+      {/* ---------------- Pending Status Notice for Citizens ---------------- */}
+      {role === "citizen" && report.pendingStatus && (
+        <div className="bg-yellow-100 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 rounded-xl p-4 shadow-lg mb-4">
+          <p className="font-semibold">
+            Your report status update to "{report.pendingStatus}" has been
+            submitted. It is awaiting admin approval before finalizing.
+          </p>
+        </div>
+      )}
       {/* ---------------- Media Section ---------------- */}
       {report.media?.length > 0 && (
         <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3">
@@ -438,65 +448,65 @@ const updateStatusWithNote = async (status) => {
               </div>
             )}
 
-           <div className="flex flex-wrap gap-2 mt-3">
-  {availableStatuses
-    .filter((st) => st !== report.status && st !== "Open") // only hide current + Open
-    .map((st) => (
-      <Button
-        key={st}
-        onClick={() => updateStatusWithNote(st)}
-        className={
-          st === "Resolved"
-            ? "bg-green-600 hover:bg-green-700 text-white"
-            : st === "Rejected"
-            ? "bg-red-600 hover:bg-red-700 text-white"
-            : st === "In Progress"
-            ? "bg-blue-600 hover:bg-blue-700 text-white"
-            : "bg-yellow-500 hover:bg-yellow-600 text-white"
-        }
-      >
-        Mark as {st}
-      </Button>
-    ))}
-</div>
-
+            <div className="flex flex-wrap gap-2 mt-3">
+              {availableStatuses
+                .filter((st) => st !== report.status && st !== "Open") // only hide current + Open
+                .map((st) => (
+                  <Button
+                    key={st}
+                    onClick={() => updateStatusWithNote(st)}
+                    className={
+                      st === "Resolved"
+                        ? "bg-green-600 hover:bg-green-700 text-white"
+                        : st === "Rejected"
+                        ? "bg-red-600 hover:bg-red-700 text-white"
+                        : st === "In Progress"
+                        ? "bg-blue-600 hover:bg-blue-700 text-white"
+                        : "bg-yellow-500 hover:bg-yellow-600 text-white"
+                    }
+                  >
+                    Mark as {st}
+                  </Button>
+                ))}
+            </div>
           </div>
         )
       ) : null}
 
-     {role === "admin" && report.pendingStatus && report.adminVerification?.verified === null && (
-  <div className="bg-yellow-50 dark:bg-yellow-900 p-4 rounded-xl shadow-lg space-y-3">
-    <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-      Admin Verification Required
-    </h3>
-    <p>
-      Officer proposed status: <strong>{report.pendingStatus}</strong>
-    </p>
-    <textarea
-      placeholder="Enter a note for approval/rejection"
-      value={adminNote}
-      onChange={(e) => setAdminNote(e.target.value)}
-      className="w-full border p-2 rounded focus:outline-none focus:ring focus:ring-yellow-400 dark:bg-gray-800 dark:text-white"
-      rows={3}
-    />
+      {role === "admin" &&
+        report.pendingStatus &&
+        report.adminVerification?.verified === null && (
+          <div className="bg-yellow-50 dark:bg-yellow-900 p-4 rounded-xl shadow-lg space-y-3">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+              Admin Verification Required
+            </h3>
+            <p>
+              Officer proposed status: <strong>{report.pendingStatus}</strong>
+            </p>
+            <textarea
+              placeholder="Enter a note for approval/rejection"
+              value={adminNote}
+              onChange={(e) => setAdminNote(e.target.value)}
+              className="w-full border p-2 rounded focus:outline-none focus:ring focus:ring-yellow-400 dark:bg-gray-800 dark:text-white"
+              rows={3}
+            />
 
-    <div className="flex gap-2">
-      <Button
-        onClick={() => handleAdminDecision(true)}
-        className="bg-green-600 hover:bg-green-700 text-white"
-      >
-        Approve
-      </Button>
-      <Button
-        onClick={() => handleAdminDecision(false)}
-        className="bg-red-600 hover:bg-red-700 text-white"
-      >
-        Reject
-      </Button>
-    </div>
-  </div>
-)}
-
+            <div className="flex gap-2">
+              <Button
+                onClick={() => handleAdminDecision(true)}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                Approve
+              </Button>
+              <Button
+                onClick={() => handleAdminDecision(false)}
+                className="bg-red-600 hover:bg-red-700 text-white"
+              >
+                Reject
+              </Button>
+            </div>
+          </div>
+        )}
 
       {/* ---------------- Status History ---------------- */}
       {report.statusHistory?.length > 0 && (
@@ -507,67 +517,96 @@ const updateStatusWithNote = async (status) => {
           <div className="space-y-2">
             {report.statusHistory
               .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
-              .map((s, idx) => (
-                <div
-                  key={idx}
-                  className="p-3 bg-gray-100 dark:bg-gray-700 rounded shadow-sm"
-                >
-                  <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                    Status:{" "}
-                    <span
-                      className={`px-2 py-1 rounded-full ${
-                        statusColor[s.status] || "bg-gray-200 text-gray-700"
-                      }`}
-                    >
-                      {s.status}
-                    </span>
-                  </p>
-                  <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
-                    Note: {s.note || "No note provided"}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Changed by: {s.by?.name || "Officer"} |{" "}
-                    {new Date(s.createdAt).toLocaleString()}
-                  </p>
+              .map((s, idx) => {
+                // Compute display status based on admin verification
+                const getDisplayStatus = (statusObj) => {
+                  if (
+                    statusObj.status === "Resolved" ||
+                    statusObj.status === "Rejected"
+                  ) {
+                    if (statusObj.adminVerification) {
+                      if (statusObj.adminVerification.verified === true)
+                        return statusObj.status; // admin approved
+                      if (statusObj.adminVerification.verified === false)
+                        return `${statusObj.status} (rejected by admin)`; // admin rejected
+                    }
+                    return `${statusObj.status} (pending admin approval)`; // pending admin
+                  }
+                  return statusObj.status; // other statuses
+                };
 
-                  {/* Officer Proof Media */}
-                  {s.media?.length > 0 && (
-                    <div className="flex flex-wrap gap-2 mt-2">
-                      {s.media.map((m, j) =>
-                        m.mime.startsWith("image/") ? (
-                          <img
-                            key={j}
-                            src={m.url}
-                            onClick={() => window.open(m.url, "_blank")}
-                            alt="proof"
-                            className="w-32 h-32 object-cover rounded border cursor-pointer hover:scale-105 transition"
-                          />
-                        ) : (
-                          <video
-                            key={j}
-                            src={m.url}
-                            controls
-                            onClick={() => window.open(m.url, "_blank")}
-                            className="w-40 h-32 object-cover rounded border cursor-pointer hover:scale-105 transition"
-                          />
-                        )
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))}
+                const displayStatus = getDisplayStatus(s);
+
+                return (
+                  <div
+                    key={idx}
+                    className="p-3 bg-gray-100 dark:bg-gray-700 rounded shadow-sm"
+                  >
+                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                      Status:{" "}
+                      <span
+                        className={`px-2 py-1 rounded-full ${
+                          statusColor[s.status] || "bg-gray-200 text-gray-700"
+                        }`}
+                      >
+                        {displayStatus}
+                      </span>
+                    </p>
+                    <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
+                      Note: {s.note || "No note provided"}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Changed by: {s.by?.name || "Officer"} |{" "}
+                      {new Date(s.createdAt).toLocaleString()}
+                    </p>
+
+                    {/* Officer Proof Media */}
+                    {s.media?.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {s.media.map((m, j) =>
+                          m.mime.startsWith("image/") ? (
+                            <img
+                              key={j}
+                              src={m.url}
+                              onClick={() => window.open(m.url, "_blank")}
+                              alt="proof"
+                              className="w-32 h-32 object-cover rounded border cursor-pointer hover:scale-105 transition"
+                            />
+                          ) : (
+                            <video
+                              key={j}
+                              src={m.url}
+                              controls
+                              onClick={() => window.open(m.url, "_blank")}
+                              className="w-40 h-32 object-cover rounded border cursor-pointer hover:scale-105 transition"
+                            />
+                          )
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
           </div>
         </div>
       )}
 
-      {/* ---------------- Comments ---------------- */}
+      {/* ---------------- Comments / Pending Transfer ---------------- */}
       <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3">
         <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
           Comments
         </h2>
-        <div className="space-y-2">
-          {report.comments?.length > 0 ? (
-            report.comments.map((c) => {
+
+        {/* Pending Transfer Message */}
+        {report.transfer?.requested && report.transfer.status === "pending" ? (
+          <p className="text-gray-500 italic">
+            This report has been transferred to another department. Comments are
+            temporarily hidden until admin approves the transfer.
+          </p>
+        ) : report.comments?.length > 0 ? (
+          // Normal comments
+          <div className="space-y-2">
+            {report.comments.map((c) => {
               const isAdminComment = c.by?.role === "admin";
               const officerCannotReply = role === "officer" && isAdminComment;
 
@@ -618,29 +657,31 @@ const updateStatusWithNote = async (status) => {
                   )}
                 </div>
               );
-            })
-          ) : (
-            <p className="text-gray-500">No comments yet.</p>
-          )}
-        </div>
-
-        {canComment && (
-          <div className="mt-3 flex gap-2">
-            <input
-              type="text"
-              placeholder="Write a comment..."
-              value={commentText}
-              onChange={(e) => setCommentText(e.target.value)}
-              className="flex-1 border p-2 rounded focus:outline-none focus:ring focus:ring-blue-400 dark:bg-gray-800 dark:text-white"
-            />
-            <Button
-              onClick={addComment}
-              className="bg-green-600 hover:bg-green-700 text-white"
-            >
-              Add Comment
-            </Button>
+            })}
           </div>
+        ) : (
+          <p className="text-gray-500">No comments yet.</p>
         )}
+
+        {canComment &&
+          (!report.transfer?.requested ||
+            report.transfer.status === "approved") && (
+            <div className="mt-3 flex gap-2">
+              <input
+                type="text"
+                placeholder="Write a comment..."
+                value={commentText}
+                onChange={(e) => setCommentText(e.target.value)}
+                className="flex-1 border p-2 rounded focus:outline-none focus:ring focus:ring-blue-400 dark:bg-gray-800 dark:text-white"
+              />
+              <Button
+                onClick={addComment}
+                className="bg-green-600 hover:bg-green-700 text-white"
+              >
+                Add Comment
+              </Button>
+            </div>
+          )}
       </div>
     </div>
   );

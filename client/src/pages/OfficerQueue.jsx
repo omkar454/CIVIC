@@ -117,42 +117,36 @@ export default function OfficerQueue() {
       );
 
       let data = Array.isArray(res.data) ? res.data : [];
+      console.log("Fetched reports:", data);
 
-      // Determine display based on status & admin verification
-      data = data.map((r) => {
-        const pendingAdmin = r.adminVerification?.verified === null;
-        const adminRejected = r.adminVerification?.verified === false;
-        const adminApproved = r.adminVerification?.verified === true;
-
-        // Only include in officer queue if:
-        // - Status not Resolved/Rejected OR
-        // - Pending admin OR
-        // - Admin rejected
-        const showInQueue =
-          r.status === "Resolved" || r.status === "Rejected"
-            ? pendingAdmin || adminRejected
-            : true;
-
-        return {
+      // ------------------ Map & filter reports ------------------
+      data = data
+        .map((r) => ({
           ...r,
           department: categoryToDepartment[r.category] || "General",
-          priorityScore: (r.severity || 0) * 2 + (r.votes || 0),
-          lat: r.lat,
-          lng: r.lng,
-          pendingAdmin,
-          showInQueue,
-          adminRejected,
-          adminApproved,
+          priorityScore: r.priorityScore || 0,
+          lat: r.location?.coordinates?.[1] ?? null,
+          lng: r.location?.coordinates?.[0] ?? null,
+          adminApproved: r.adminVerification?.verified === true,
           adminNote: r.adminVerification?.note || "",
-        };
-      });
+          transferRequested: r.transfer?.requested === true,
+          transferStatus: r.transfer?.status || null, // "pending", "approved", "rejected"
+          transferAdminNote: r.transfer?.adminNote || "",
+        }))
+        // ------------------ Filter based on transfer ------------------
+        .filter((r) => {
+          // Hide reports that are pending transfer approval or already approved
+          if (r.transferRequested && (r.transferStatus === "pending" || r.transferStatus === "approved")) {
+            return false;
+          }
+          // Show rejected transfer back in queue
+          return true;
+        });
 
-      const sorted = data
-        .filter((r) => r.showInQueue)
-        .sort((a, b) => b.priorityScore - a.priorityScore);
+      data.sort((a, b) => b.priorityScore - a.priorityScore);
 
-      setReports(sorted);
-      setFilteredReports(sorted);
+      setReports(data);
+      setFilteredReports(data);
     } catch (err) {
       console.error(err);
       alert(err.response?.data?.message || "Error fetching queue");
@@ -169,8 +163,13 @@ export default function OfficerQueue() {
   useEffect(() => {
     let temp = [...reports];
     if (filters.category)
-      temp = temp.filter((r) => r.category === filters.category);
-    if (filters.status) temp = temp.filter((r) => r.status === filters.status);
+      temp = temp.filter(
+        (r) => r.category.toLowerCase() === filters.category.toLowerCase()
+      );
+    if (filters.status)
+      temp = temp.filter(
+        (r) => r.status.toLowerCase() === filters.status.toLowerCase()
+      );
     if (filters.severity)
       temp = temp.filter((r) => r.severity === parseInt(filters.severity));
     setFilteredReports(temp);
@@ -181,12 +180,8 @@ export default function OfficerQueue() {
     return <p className="text-center mt-8">No reports in queue.</p>;
 
   // ------------------ Heatmap Data ------------------
-  const reportsWithCoords = filteredReports.filter(
-    (r) => r.lat && r.lng && !r.adminApproved
-  );
-  const reportsNoCoords = filteredReports.filter(
-    (r) => !r.lat || !r.lng || r.adminApproved
-  );
+  const reportsWithCoords = filteredReports.filter((r) => r.lat && r.lng);
+  const reportsNoCoords = filteredReports.filter((r) => !r.lat || !r.lng);
 
   const maxPriority = Math.max(
     ...reportsWithCoords.map((r) => r.priorityScore),
@@ -238,7 +233,8 @@ export default function OfficerQueue() {
             Heatmap of Reports (by Priority Score)
           </h3>
           <p className="text-sm text-gray-600 mb-2">
-            Only reports with valid latitude and longitude affect the heatmap.
+            Only reports currently in the queue with valid latitude and
+            longitude affect the heatmap.
           </p>
           <div className="h-80 rounded shadow overflow-hidden relative">
             <MapContainer
@@ -248,7 +244,6 @@ export default function OfficerQueue() {
             >
               <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
 
-              {/* Heatmap */}
               <HeatmapLayer
                 points={reportsWithCoords.map((r) => [
                   r.lat,
@@ -258,7 +253,6 @@ export default function OfficerQueue() {
                 options={{ radius: 25, blur: 15, maxZoom: 17 }}
               />
 
-              {/* Markers */}
               {reportsWithCoords.map((r) => (
                 <Marker key={r._id} position={[r.lat, r.lng]} icon={redIcon}>
                   <Popup>
@@ -273,9 +267,9 @@ export default function OfficerQueue() {
                       {r.priorityScore}
                       <br />
                       Status: {r.status}
-                      {r.adminRejected && (
-                        <span className="ml-1 text-red-600 italic">
-                          (Rejected by Admin: {r.adminNote})
+                      {r.transferStatus === "rejected" && (
+                        <span className="block text-red-600">
+                          Transfer rejected: {r.transferAdminNote}
                         </span>
                       )}
                       <br />
@@ -291,7 +285,6 @@ export default function OfficerQueue() {
               ))}
             </MapContainer>
 
-            {/* Heatmap Legend */}
             <HeatmapLegend maxScore={maxPriority} />
           </div>
         </div>
@@ -304,8 +297,7 @@ export default function OfficerQueue() {
             Reports Not Displayed on Heatmap
           </h3>
           <p className="text-sm text-gray-600 mb-3">
-            These reports do not have valid latitude/longitude or are admin
-            approved.
+            These reports do not have valid latitude/longitude.
           </p>
           <ul className="list-disc list-inside text-sm text-gray-700">
             {reportsNoCoords.map((r) => (
@@ -313,9 +305,10 @@ export default function OfficerQueue() {
                 <strong>{r.title}</strong> - Category: {r.category} |
                 Department: {r.department} | Severity: {r.severity} | Status:{" "}
                 {r.status}
-                {r.adminRejected && (
-                  <span className="ml-1 text-red-600 italic">
-                    (Rejected by Admin: {r.adminNote})
+                {r.transferStatus === "rejected" && (
+                  <span className="text-red-600">
+                    {" "}
+                    - Transfer rejected: {r.transferAdminNote}
                   </span>
                 )}
               </li>
@@ -333,20 +326,16 @@ export default function OfficerQueue() {
             Category: {r.category} | Department: {r.department} | Severity:{" "}
             {r.severity} | Votes: {r.votes} | Priority: {r.priorityScore} |
             Status: {r.status}
-            {r.pendingAdmin && (
-              <span className="ml-2 text-yellow-700 italic">
-                (Waiting for admin approval)
-              </span>
-            )}
-            {r.adminRejected && (
-              <span className="ml-2 text-red-600 italic">
-                (Rejected by Admin: {r.adminNote})
-              </span>
-            )}
           </p>
           <p className="text-sm text-gray-500">
             Reported by: {r.reporter?.name} ({r.reporter?.email})
           </p>
+
+          {r.transferStatus === "rejected" && (
+            <p className="text-sm text-red-600">
+              Transfer rejected by admin: {r.transferAdminNote}
+            </p>
+          )}
 
           {r.media?.length > 0 && (
             <div className="flex flex-wrap gap-2">

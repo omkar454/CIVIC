@@ -179,9 +179,12 @@ router.get("/analytics", auth("admin"), async (req, res) => {
   }
 });
 
+// -----------------------------
+// Admin verifies officer-updated report
+// -----------------------------
 router.post("/verify-report/:id", auth("admin"), async (req, res) => {
   try {
-    const { approve, note } = req.body; // approve: true/false
+    const { approve, note } = req.body;
     if (approve === undefined)
       return res.status(400).json({ message: "Approval decision required" });
 
@@ -191,10 +194,10 @@ router.post("/verify-report/:id", auth("admin"), async (req, res) => {
 
     if (!report) return res.status(404).json({ message: "Report not found" });
 
-    if (!["Resolved", "Rejected"].includes(report.status)) {
-      return res
-        .status(400)
-        .json({ message: "Report status not eligible for admin verification" });
+    if (!["Resolved (Pending Admin Approval)", "Rejected (Pending Admin Approval)"].includes(report.status)) {
+      return res.status(400).json({
+        message: "Report status not eligible for admin verification",
+      });
     }
 
     // Update admin verification
@@ -208,14 +211,25 @@ router.post("/verify-report/:id", auth("admin"), async (req, res) => {
       createdAt: new Date(),
     });
 
-    // Reassign to queue if rejected
-    if (!approve) {
-      report.assignedTo = null;
+    if (approve) {
+      // ✅ If approved → finalize actual status
+      report.status = report.status.includes("Resolved")
+        ? "Resolved"
+        : "Rejected";
       report.statusHistory.push({
         status: report.status,
         by: req.user._id,
+        note: `Admin approved officer status: ${note || "No note provided"}`,
+        at: new Date(),
+      });
+    } else {
+      // ❌ If rejected → mark rejected by admin
+      report.status = "Rejected (by Admin)";
+      report.assignedTo = null;
+      report.statusHistory.push({
+        status: "Rejected (by Admin)",
+        by: req.user._id,
         note: `Admin rejected officer update: ${note || "No note provided"}`,
-        media: [],
         at: new Date(),
       });
     }

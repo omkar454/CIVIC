@@ -110,7 +110,6 @@ export default function ReportForm() {
     title: "",
     description: "",
     category: "",
-    severity: 1,
     media: [],
   });
   const [position, setPosition] = useState(null);
@@ -181,8 +180,7 @@ export default function ReportForm() {
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
 
-  const handleSeverityChange = (e) =>
-    setForm({ ...form, severity: parseInt(e.target.value) });
+
 
   const handleMediaUpload = (e) => {
     const files = Array.from(e.target.files);
@@ -196,123 +194,129 @@ export default function ReportForm() {
     }));
   };
 
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  setError("");
-  setSuccess("");
-  setLoading(true);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSuccess("");
+    setLoading(true);
 
-  try {
-    // Validation
-    if (!form.title || !form.description || !form.category) {
-      setError("Please fill all required fields.");
-      setLoading(false);
-      return;
-    }
+    try {
+      // Validation
+      if (!form.title || !form.description || !form.category) {
+        setError("Please fill all required fields.");
+        setLoading(false);
+        return;
+      }
 
-    if ((locationOption === "live" || locationOption === "map") && !position) {
-      setError("Select a location or enable live location.");
-      setLoading(false);
-      return;
-    }
+      if (
+        (locationOption === "live" || locationOption === "map") &&
+        !position
+      ) {
+        setError("Select a location or enable live location.");
+        setLoading(false);
+        return;
+      }
 
-    if (locationOption === "address" && !manualAddress.trim()) {
-      setError("Please enter a valid address.");
-      setLoading(false);
-      return;
-    }
+      if (locationOption === "address" && !manualAddress.trim()) {
+        setError("Please enter a valid address.");
+        setLoading(false);
+        return;
+      }
 
-    // -------------------------------
-    // 1️⃣ Upload Media (if any)
-    // -------------------------------
-    let mediaURLs = [];
-    if (form.media.length > 0) {
-      const mediaForm = new FormData();
-      form.media.forEach((file) => mediaForm.append("media", file));
-      const mediaRes = await axios.post(
-        "http://localhost:5000/api/media",
-        mediaForm,
+      // -------------------------------
+      // 1️⃣ Upload Media (if any)
+      // -------------------------------
+      let mediaURLs = [];
+      if (form.media.length > 0) {
+        const mediaForm = new FormData();
+        form.media.forEach((file) => mediaForm.append("media", file));
+        const mediaRes = await axios.post(
+          "http://localhost:5000/api/media",
+          mediaForm,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "multipart/form-data",
+            },
+          }
+        );
+        mediaURLs = mediaRes.data.uploaded.map((f) => ({
+          url: f.url,
+          mime: f.mime,
+        }));
+      }
+
+      // -------------------------------
+      // 2️⃣ Prepare Payload
+      // -------------------------------
+      const payload =
+        locationOption === "address"
+          ? { ...form, media: mediaURLs, address: manualAddress }
+          : {
+              ...form,
+              media: mediaURLs,
+              location: {
+                type: "Point",
+                coordinates: [position[1], position[0]],
+              },
+              address: locationOption === "live" ? liveAddress : "",
+            };
+
+      // -------------------------------
+      // 3️⃣ Submit Report
+      // -------------------------------
+      const res = await axios.post(
+        "http://localhost:5000/api/reports",
+        payload,
         {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            "Content-Type": "multipart/form-data",
-          },
+          headers: { Authorization: `Bearer ${token}` },
         }
       );
-      mediaURLs = mediaRes.data.uploaded.map((f) => ({
-        url: f.url,
-        mime: f.mime,
-      }));
-    }
 
-    // -------------------------------
-    // 2️⃣ Prepare Payload
-    // -------------------------------
-    const payload =
-      locationOption === "address"
-        ? { ...form, media: mediaURLs, address: manualAddress }
-        : {
-            ...form,
-            media: mediaURLs,
-            location: {
-              type: "Point",
-              coordinates: [position[1], position[0]],
-            },
-            address: locationOption === "live" ? liveAddress : "",
-          };
+      // Correct report ID
+      const reportId = res.data.report._id;
 
-    // -------------------------------
-    // 3️⃣ Submit Report
-    // -------------------------------
-    const res = await axios.post("http://localhost:5000/api/reports", payload, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-
-    // Correct report ID
-    const reportId = res.data.report._id;
-
-    // -------------------------------
-    // 4️⃣ Optional Question to Officer
-    // -------------------------------
-    if (questionText.trim()) {
-      try {
-        await axios.post(
-          `http://localhost:5000/api/reports/${reportId}/comments`,
-          { message: questionText },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-      } catch (commentErr) {
-        console.warn("Failed to submit officer question:", commentErr);
+      // -------------------------------
+      // 4️⃣ Optional Question to Officer
+      // -------------------------------
+      if (questionText.trim()) {
+        try {
+          await axios.post(
+            `http://localhost:5000/api/reports/${reportId}/comments`,
+            { message: questionText },
+            { headers: { Authorization: `Bearer ${token}` } }
+          );
+        } catch (commentErr) {
+          console.warn("Failed to submit officer question:", commentErr);
+        }
       }
+
+      // -------------------------------
+      // 5️⃣ Reset Form
+      // -------------------------------
+      setSuccess("Report submitted successfully!");
+      setForm({
+        title: "",
+        description: "",
+        category: "",
+      
+        media: [],
+      });
+      setPosition(null);
+      setManualAddress("");
+      setLiveAddress("");
+      setQuestionText("");
+      setLocationOption("map");
+
+      // Navigate to the report detail page
+      setTimeout(() => navigate(`/reports/${reportId}`), 1500);
+    } catch (err) {
+      console.error("Create report error:", err);
+      setError(err.response?.data?.message || "Failed to submit report.");
+    } finally {
+      setLoading(false);
     }
-
-    // -------------------------------
-    // 5️⃣ Reset Form
-    // -------------------------------
-    setSuccess("Report submitted successfully!");
-    setForm({
-      title: "",
-      description: "",
-      category: "",
-      severity: 1,
-      media: [],
-    });
-    setPosition(null);
-    setManualAddress("");
-    setLiveAddress("");
-    setQuestionText("");
-    setLocationOption("map");
-
-    // Navigate to the report detail page
-    setTimeout(() => navigate(`/reports/${reportId}`), 1500);
-  } catch (err) {
-    console.error("Create report error:", err);
-    setError(err.response?.data?.message || "Failed to submit report.");
-  } finally {
-    setLoading(false);
-  }
-};
-
+  };
 
   return (
     <div className="max-w-4xl mx-auto p-4">
@@ -386,25 +390,7 @@ const handleSubmit = async (e) => {
             </select>
           </div>
 
-          {/* Severity */}
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Severity: {form.severity}
-            </label>
-            <input
-              type="range"
-              name="severity"
-              min="1"
-              max="5"
-              value={form.severity}
-              onChange={handleSeverityChange}
-              className="w-full"
-            />
-            <div className="flex justify-between text-xs text-gray-500 dark:text-gray-300">
-              <span>Low</span>
-              <span>High</span>
-            </div>
-          </div>
+         
 
           {/* Media Upload */}
           <div>

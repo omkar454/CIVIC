@@ -67,7 +67,7 @@ router.post("/:id/vote", auth("citizen"), async (req, res) => {
 });
 
 /* ------------------------------------------------------------
-   Add a comment (citizen only)
+   Add a comment (citizen only, requires admin verification)
 ------------------------------------------------------------ */
 router.post("/:id/comment", auth("citizen"), async (req, res) => {
   try {
@@ -78,6 +78,17 @@ router.post("/:id/comment", auth("citizen"), async (req, res) => {
     if (!found) return res.status(404).json({ message: "Report not found" });
 
     const { report } = found;
+
+    // ✅ Restrict comment until citizenAdminVerification.verified = true
+    if (req.user.role === "citizen") {
+      if (!report.citizenAdminVerification?.verified) {
+        return res.status(403).json({
+          message:
+            "You can comment only after your report is verified by admin.",
+        });
+      }
+    }
+
     report.comments = report.comments || [];
     report.comments.push({ message, by: req.user.id, createdAt: new Date() });
     await report.save();

@@ -5,6 +5,7 @@ import TextAddressReport from "../models/TextAddressReport.js"; // ✅ New model
 import User from "../models/User.js";
 import Notification from "../models/Notification.js";
 import auth from "../middleware/auth.js";
+import TransferLog from "../models/TransferLog.js";
 import fetch from "node-fetch";
 
 const router = express.Router();
@@ -179,54 +180,61 @@ router.post("/", auth("citizen"), async (req, res) => {
 });
 
 // Allow all roles: citizen, officer, admin
-router.get("/textreports", auth(["admin", "officer", "citizen"]), async (req, res) => {
-  try {
-    const filter = {};
-    
-    // Officers still see only their department
-    if (req.user.role === "officer") {
-      filter.department = req.user.department;
+router.get(
+  "/textreports",
+  auth(["admin", "officer", "citizen"]),
+  async (req, res) => {
+    try {
+      const filter = {};
+
+      // Officers still see only their department
+      if (req.user.role === "officer") {
+        filter.department = req.user.department;
+      }
+
+      // Citizens can see all text reports → no filter by reporter
+
+      const reports = await TextAddressReport.find(filter)
+        .populate("reporter", "name email role")
+        .populate("assignedTo", "name email role department")
+        .sort({ createdAt: -1 });
+
+      res.json({
+        total: reports.length,
+        reports: reports.map((r) => ({
+          ...r.toObject(),
+          lat: null,
+          lng: null,
+        })),
+      });
+    } catch (err) {
+      console.error("Fetch text reports error:", err);
+      res.status(500).json({ message: "Server error" });
     }
-
-    // Citizens can see all text reports → no filter by reporter
-
-    const reports = await TextAddressReport.find(filter)
-      .populate("reporter", "name email role")
-      .populate("assignedTo", "name email role department")
-      .sort({ createdAt: -1 });
-
-    res.json({
-      total: reports.length,
-      reports: reports.map((r) => ({
-        ...r.toObject(),
-        lat: null,
-        lng: null,
-      })),
-    });
-  } catch (err) {
-    console.error("Fetch text reports error:", err);
-    res.status(500).json({ message: "Server error" });
   }
-});
+);
 
 // Fetch single text report by ID
-router.get("/textreports/:id", auth(["admin", "officer", "citizen"]), async (req, res) => {
-  try {
-    const report = await TextAddressReport.findById(req.params.id)
-      .populate("reporter", "name email role")
-      .populate("assignedTo", "name email role department")
-      .populate("comments.by", "name email role")
-      .populate("comments.repliedBy", "name email role");
+router.get(
+  "/textreports/:id",
+  auth(["admin", "officer", "citizen"]),
+  async (req, res) => {
+    try {
+      const report = await TextAddressReport.findById(req.params.id)
+        .populate("reporter", "name email role")
+        .populate("assignedTo", "name email role department")
+        .populate("comments.by", "name email role")
+        .populate("comments.repliedBy", "name email role");
 
-    if (!report) return res.status(404).json({ message: "Report not found" });
+      if (!report) return res.status(404).json({ message: "Report not found" });
 
-    res.json(report);
-  } catch (err) {
-    console.error("Fetch text report error:", err);
-    res.status(500).json({ message: "Server error" });
+      res.json(report);
+    } catch (err) {
+      console.error("Fetch text report error:", err);
+      res.status(500).json({ message: "Server error" });
+    }
   }
-});
-
+);
 
 /* ------------------------------------------------------------------
    📋 Fetch Reports (with filters)
@@ -311,59 +319,52 @@ router.get("/", auth(), async (req, res) => {
   }
 });
 
-
-// Fetch all reports (geo + text) for officer queue with admin verification logic
+// Fetch all reports verified by admin for officer queue
 router.get("/officer-queue", auth("officer"), async (req, res) => {
   try {
     const userDepartment = req.user.department;
 
-    // Geocoded reports
-    const geoReports = await Report.find({ department: userDepartment })
+    // ---------------- Geocoded reports ----------------
+    const geoReports = await Report.find({
+      department: userDepartment,
+      "citizenAdminVerification.verified": true, // ✅ CHANGED from adminVerification
+      $nor: [
+        { status: "Resolved" },
+        { status: "Rejected" }
+      ]
+    })
       .populate("reporter", "name email role")
       .populate("assignedTo", "name email role department")
       .sort({ createdAt: -1 });
 
-    // Text-only reports
-    const textReports = await TextAddressReport.find({ department: userDepartment })
+    // ---------------- Text-only reports ----------------
+    const textReports = await TextAddressReport.find({
+      department: userDepartment,
+      "citizenAdminVerification.verified": true, // ✅ CHANGED
+      $nor: [
+        { status: "Resolved" },
+        { status: "Rejected" }
+      ]
+    })
       .populate("reporter", "name email role")
       .populate("assignedTo", "name email role department")
       .sort({ createdAt: -1 });
 
-    // Filter based on admin verification
-    const filterPending = (report) => {
-      // If no adminVerification → normal report, include in queue
-      if (!report.adminVerification) return true;
+    // ---------------- Map geocoded reports ----------------
+    const geoMapped = geoReports.map((r) => ({
+      ...r.toObject(),
+      lat: r.location?.coordinates?.[1] ?? null,
+      lng: r.location?.coordinates?.[0] ?? null,
+    }));
 
-      // If officer set Resolved/Rejected → include only if pending admin verification
-      if ((report.status === "Resolved" || report.status === "Rejected") &&
-          report.adminVerification.verified === null) return true;
+    // ---------------- Map text-only reports ----------------
+    const textMapped = textReports.map((r) => ({
+      ...r.toObject(),
+      lat: null,
+      lng: null,
+    }));
 
-      // If admin approved → remove from officer queue
-      if (report.adminVerification.verified === true) return false;
-
-      // If admin rejected → include in queue again
-      if (report.adminVerification.verified === false) return true;
-
-      return true;
-    };
-
-    const geoMapped = geoReports
-      .filter(filterPending)
-      .map((r) => ({
-        ...r.toObject(),
-        lat: r.location?.coordinates?.[1] ?? null,
-        lng: r.location?.coordinates?.[0] ?? null,
-      }));
-
-    const textMapped = textReports
-      .filter(filterPending)
-      .map((r) => ({
-        ...r.toObject(),
-        lat: null,
-        lng: null,
-      }));
-
-    // Combine both
+    // ---------------- Combine both ----------------
     const combined = [...geoMapped, ...textMapped];
 
     res.json(combined);
@@ -375,31 +376,50 @@ router.get("/officer-queue", auth("officer"), async (req, res) => {
 
 
 
-
 /* ------------------------------------------------------------------
-📍 Get Single Report
+📍 Get Single Report with Transfer Logs
 -------------------------------------------------------------------*/
 router.get("/:id", auth(), async (req, res) => {
   try {
-    const report = await Report.findById(req.params.id)
-      .populate("reporter", "name email role")
-      .populate("assignedTo", "name email role department")
-      .populate("comments.by", "name email role")
-      .populate("comments.repliedBy", "name email role")
-      .populate("statusHistory.by", "name email role");
+    const { id } = req.params;
+
+    // Find report in either collection
+    let report =
+      (await Report.findById(id)
+        .populate("reporter", "name email role")
+        .populate("assignedTo", "name email role department")
+        .populate("comments.by", "name email role")
+        .populate("comments.repliedBy", "name email role")
+        .populate("statusHistory.by", "name email role")) ||
+      (await TextAddressReport.findById(id)
+        .populate("reporter", "name email role")
+        .populate("assignedTo", "name email role department")
+        .populate("comments.by", "name email role")
+        .populate("comments.repliedBy", "name email role")
+        .populate("statusHistory.by", "name email role"));
 
     if (!report) return res.status(404).json({ message: "Report not found" });
 
+    // Fetch transfer logs for this report
+    const transferLogs = await TransferLog.find({ report: id })
+      .populate("requestedBy", "name email role")
+      .populate("adminVerification.verifiedBy", "name email role")
+      .sort({ createdAt: 1 }); // ascending order
+
+    const reportObj = report.toObject();
+    reportObj.transferLogs = transferLogs;
+
     res.json({
-      ...report.toObject(),
-      lat: report.location?.coordinates?.[1],
-      lng: report.location?.coordinates?.[0],
+      ...reportObj,
+      lat: report.location?.coordinates?.[1] ?? null,
+      lng: report.location?.coordinates?.[0] ?? null,
     });
   } catch (err) {
     console.error("Report detail error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 /* ------------------------------------------------------------------
    🧑‍🔧 Update Report Status (Officer/Admin, includes Admin Verification)
@@ -408,7 +428,13 @@ router.post("/:id/status", auth(["officer", "admin"]), async (req, res) => {
   try {
     const { status, note, media, adminApprove } = req.body; // adminApprove for admin action
 
-    const allowed = ["Open", "Acknowledged", "In Progress", "Resolved", "Rejected"];
+    const allowed = [
+      "Open",
+      "Acknowledged",
+      "In Progress",
+      "Resolved",
+      "Rejected",
+    ];
     if (!status || !allowed.includes(status))
       return res.status(400).json({ message: "Invalid status" });
 
@@ -420,7 +446,10 @@ router.post("/:id/status", auth(["officer", "admin"]), async (req, res) => {
     if (!report) return res.status(404).json({ message: "Report not found" });
 
     // Officer validation
-    if (req.user.role === "officer" && req.user.department !== report.department)
+    if (
+      req.user.role === "officer" &&
+      req.user.department !== report.department
+    )
       return res.status(403).json({ message: "Unauthorized" });
 
     const formattedMedia = (media || []).map((m) => ({
@@ -430,20 +459,30 @@ router.post("/:id/status", auth(["officer", "admin"]), async (req, res) => {
       uploadedAt: new Date(),
     }));
 
-    // -----------------------------
-    // OFFICER UPDATES
-    // -----------------------------
+    /* -----------------------------
+       👮 OFFICER UPDATES
+    ----------------------------- */
     if (req.user.role === "officer") {
       // Officers cannot directly resolve/reject; move to pendingStatus
       if (status === "Resolved" || status === "Rejected") {
         if (!media || media.length === 0) {
-          return res.status(400).json({ message: "Officer must upload proof media when proposing Resolved/Rejected." });
+          return res.status(400).json({
+            message:
+              "Officer must upload proof media when proposing Resolved/Rejected.",
+          });
         }
 
         report.pendingStatus = status;
-        report.adminVerification = report.adminVerification || { verified: null, note: "", admin: null, history: [] };
+        report.adminVerification = report.adminVerification || {
+          verified: null,
+          note: "",
+          admin: null,
+          history: [],
+        };
+
+        // 🟡 Add "(Pending Admin Approval)" tag in statusHistory
         report.statusHistory.push({
-          status: status,
+          status: `${status} (Pending Admin Approval)`,
           by: req.user.id,
           note: note || "",
           media: formattedMedia,
@@ -458,7 +497,7 @@ router.post("/:id/status", auth(["officer", "admin"]), async (req, res) => {
         });
       }
 
-      // Other status updates (Open, Acknowledged, In Progress) can update directly
+      // Other status updates (Open, Acknowledged, In Progress)
       report.status = status;
       report.statusHistory.push({
         status,
@@ -479,21 +518,29 @@ router.post("/:id/status", auth(["officer", "admin"]), async (req, res) => {
       return res.json({ message: "Status updated", report });
     }
 
-    // -----------------------------
-    // ADMIN VERIFICATION
-    // -----------------------------
+    /* -----------------------------
+       🧑‍💼 ADMIN VERIFICATION
+    ----------------------------- */
     if (req.user.role === "admin") {
       if (typeof adminApprove === "undefined") {
-        return res.status(400).json({ message: "adminApprove required for admin action" });
+        return res
+          .status(400)
+          .json({ message: "adminApprove required for admin action" });
       }
 
       if (!report.pendingStatus) {
-        return res.status(400).json({ message: "No pending officer status to verify" });
+        return res
+          .status(400)
+          .json({ message: "No pending officer status to verify" });
       }
 
-      // Apply pendingStatus if approved
       if (!report.adminVerification) {
-        report.adminVerification = { verified: null, note: "", admin: null, history: [] };
+        report.adminVerification = {
+          verified: null,
+          note: "",
+          admin: null,
+          history: [],
+        };
       }
 
       report.adminVerification.verified = adminApprove;
@@ -507,19 +554,38 @@ router.post("/:id/status", auth(["officer", "admin"]), async (req, res) => {
       });
 
       if (adminApprove) {
+        // ✅ Approved: apply pendingStatus, remove (Pending Admin Approval)
         report.status = report.pendingStatus;
         report.pendingStatus = null;
 
-        // Notify reporter
+        // Update last statusHistory entry if it contained (Pending Admin Approval)
+        const lastEntry = report.statusHistory[report.statusHistory.length - 1];
+        if (lastEntry && lastEntry.status.includes("(Pending Admin Approval)")) {
+          lastEntry.status = report.status; // Clean status name
+          lastEntry.note = `${lastEntry.note || ""} (Approved by Admin)`;
+        }
+
+        // Notify citizen
         await Notification.create({
           user: report.reporter,
           message: `Your report "${report.title}" has been ${report.status} by admin verification.`,
         });
       } else {
-        // Rejected: keep current status, clear pendingStatus
+        // ❌ Rejected: keep current status, mark (Rejected by Admin)
+        const lastEntry = report.statusHistory[report.statusHistory.length - 1];
+        if (lastEntry && lastEntry.status.includes("(Pending Admin Approval)")) {
+          lastEntry.status = `${lastEntry.status.replace(
+            "(Pending Admin Approval)",
+            "(Rejected by Admin)"
+          )}`;
+          lastEntry.note = `${lastEntry.note || ""} — Admin rejected: ${
+            note || "No reason provided"
+          }`;
+        }
+
         report.pendingStatus = null;
 
-        // Notify assigned officer
+        // Notify officer if assigned
         if (report.assignedTo) {
           await Notification.create({
             user: report.assignedTo,
@@ -528,7 +594,7 @@ router.post("/:id/status", auth(["officer", "admin"]), async (req, res) => {
         }
       }
 
-      // Log admin action in statusHistory
+      // Log admin action
       report.statusHistory.push({
         status: report.status,
         by: req.user.id,
@@ -546,7 +612,6 @@ router.post("/:id/status", auth(["officer", "admin"]), async (req, res) => {
         report,
       });
     }
-
   } catch (err) {
     console.error("Status update error:", err);
     res.status(500).json({ message: "Server error" });
@@ -554,101 +619,6 @@ router.post("/:id/status", auth(["officer", "admin"]), async (req, res) => {
 });
 
 
-router.post(
-  "/:id/comments",
-  auth(["citizen", "officer", "admin"]),
-  async (req, res) => {
-    try {
-      const { message } = req.body;
-      if (!message)
-        return res.status(400).json({ message: "Comment required" });
-
-      let report =
-        (await Report.findById(req.params.id)) ||
-        (await TextAddressReport.findById(req.params.id));
-
-      if (!report) return res.status(404).json({ message: "Report not found" });
-
-      // Officers cannot comment if admin has approved
-      if (
-        req.user.role === "officer" &&
-        report.adminVerification?.verified === true
-      )
-        return res
-          .status(403)
-          .json({ message: "Cannot comment on admin-approved report" });
-
-      // Officers can only comment in their department
-      if (
-        req.user.role === "officer" &&
-        req.user.department !== report.department
-      )
-        return res.status(403).json({ message: "Unauthorized" });
-
-      report.comments.push({ message, by: req.user.id });
-      await report.save();
-
-      // Notify reporter if officer commented
-      if (req.user.role === "officer") {
-        await Notification.create({
-          user: report.reporter,
-          message: `Officer commented on your report "${report.title}".`,
-        });
-      }
-
-      res.json({ message: "Comment added", report });
-    } catch (err) {
-      console.error("Add comment error:", err);
-      res.status(500).json({ message: "Server error" });
-    }
-  }
-);
-
-
-/* ------------------------------------------------------------------
-   💬 Reply to Comment
--------------------------------------------------------------------*/
-router.post(
-  "/:id/comments/:commentId/reply",
-  auth(["officer", "admin", "citizen"]),
-  async (req, res) => {
-    try {
-      const { reply } = req.body;
-      if (!reply)
-        return res.status(400).json({ message: "Reply text required" });
-
-      const report = await Report.findById(req.params.id);
-      if (!report) return res.status(404).json({ message: "Report not found" });
-
-      const comment = report.comments.id(req.params.commentId);
-      if (!comment)
-        return res.status(404).json({ message: "Comment not found" });
-
-      if (
-        req.user.role === "officer" &&
-        req.user.department !== report.department
-      )
-        return res.status(403).json({ message: "Unauthorized" });
-
-      comment.reply = reply;
-      comment.repliedBy = req.user.id;
-
-      await report.save();
-
-      if (req.user.role === "officer") {
-        await Notification.create({
-          user: report.reporter,
-          message: `Officer replied to your comment on report "${report.title}".`,
-        });
-      }
-
-      res.json({ message: "Reply added", comment });
-    } catch (err) {
-      console.error("Reply error:", err);
-      res.status(500).json({ message: "Server error" });
-    }
-  }
-);
 
 /* ------------------------------------------------------------------
    👮 Assign Officer (Admin)
@@ -671,6 +641,5 @@ router.post("/:id/assign", auth("admin"), async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
 
 export default router;

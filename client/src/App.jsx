@@ -8,8 +8,11 @@ import Login from "./pages/Login";
 import ReportForm from "./pages/ReportForm";
 import ReportsLists from "./pages/ReportsLists";
 import ReportDetail from "./pages/ReportDetail";
+import ReportTracking from "./pages/ReportTracking";
 import OfficerQueue from "./pages/OfficerQueue";
 import AdminPage from "./pages/AdminPage";
+import AdminVerification from "./pages/AdminVerification";
+import AdminTransferVerification from "./pages/AdminTransferVerification"; // ✅ NEW
 
 import PrivateRoute from "./components/PrivateRoute";
 import Sidebar from "./components/Sidebar";
@@ -17,11 +20,10 @@ import Navbar from "./components/Navbar";
 
 function App() {
   const [userRole, setUserRole] = useState(null);
-  const [userName, setUserName] = useState(""); // ✅ NEW
+  const [userName, setUserName] = useState("");
   const [darkMode, setDarkMode] = useState(false);
   const navigate = useNavigate();
 
-  // Load role + name + dark mode from localStorage
   useEffect(() => {
     const role = localStorage.getItem("role");
     const name = localStorage.getItem("name");
@@ -35,7 +37,7 @@ function App() {
   const handleLogout = () => {
     localStorage.clear();
     setUserRole(null);
-    setUserName(""); // ✅ reset name
+    setUserName("");
     navigate("/login");
   };
 
@@ -52,17 +54,14 @@ function App() {
         darkMode ? "dark bg-gray-900 text-white" : "bg-gray-100 text-gray-900"
       }`}
     >
-      {/* Sidebar only if logged in */}
-      {userRole && <Sidebar role={userRole} name={userName} />}{" "}
-      {/* ✅ pass name */}
-      {/* Main content */}
+      {userRole && <Sidebar role={userRole} name={userName} />}
       <div className="flex-1 flex flex-col">
         <Navbar
           darkMode={darkMode}
           toggleDarkMode={toggleDarkMode}
           handleLogout={handleLogout}
           role={userRole}
-          name={userName} // ✅ pass name to Navbar
+          name={userName}
         />
 
         <main className="p-6 flex-1">
@@ -76,7 +75,7 @@ function App() {
                       setUserRole={setUserRole}
                       setUserName={setUserName}
                     />
-                  } // ✅ send both
+                  }
                 />
                 <Route
                   path="/register"
@@ -85,7 +84,7 @@ function App() {
                       setUserRole={setUserRole}
                       setUserName={setUserName}
                     />
-                  } // ✅ send both
+                  }
                 />
                 <Route
                   path="*"
@@ -117,6 +116,24 @@ function App() {
                   }
                 />
                 <Route
+                  path="/admin/verification"
+                  element={
+                    <PrivateRoute roles={["admin"]}>
+                      <AdminVerification />
+                    </PrivateRoute>
+                  }
+                />
+                {/* ✅ NEW ROUTE for Transfer Verification */}
+                <Route
+                  path="/admin/transfer-verification"
+                  element={
+                    <PrivateRoute roles={["admin"]}>
+                      <AdminTransferVerification darkMode={darkMode} />
+                    </PrivateRoute>
+                  }
+                />
+
+                <Route
                   path="/report"
                   element={
                     <PrivateRoute roles={["citizen"]}>
@@ -137,6 +154,14 @@ function App() {
                   element={
                     <PrivateRoute roles={["citizen", "officer", "admin"]}>
                       <ReportDetail darkMode={darkMode} />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/reports/:id/track"
+                  element={
+                    <PrivateRoute roles={["citizen", "officer", "admin"]}>
+                      <ReportTracking darkMode={darkMode} mode="track" />
                     </PrivateRoute>
                   }
                 />

@@ -13,6 +13,10 @@ import adminRoutes from "./routes/admin.js";
 import refreshRoutes from "./routes/refresh.js";
 import userRoutes from "./routes/user.js";
 import notificationsRoutes from "./routes/notifications.js";
+import adminVerificationRoutes from "./routes/adminVerification.js";
+import transferRoutes from "./routes/transfer.js"; // ✅ Import transfer routes
+
+
 
 dotenv.config({ path: "./.env" });
 
@@ -36,6 +40,9 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/refresh", refreshRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/notifications", notificationsRoutes);
+app.use("/api/admin/verification", adminVerificationRoutes); // ✅ New verification route
+app.use("/api/transfer", transferRoutes); // ✅ Register transfer routes
+
 
 // Health check
 app.get("/", (req, res) => res.json({ message: "Server is working 🚀" }));

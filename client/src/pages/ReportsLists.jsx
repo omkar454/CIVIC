@@ -1,7 +1,7 @@
 // src/pages/ReportsLists.jsx
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
-import API from "../services/api"; // centralized axios instance
+import API from "../services/api";
 import ReportsFilter from "../components/ReportsFilter";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
@@ -11,20 +11,22 @@ export default function ReportsLists({ darkMode }) {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({});
   const [search, setSearch] = useState("");
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferData, setTransferData] = useState({
+    reportId: "",
+    newDepartment: "",
+    reason: "",
+  });
 
   const userRole = localStorage.getItem("role");
   const userDepartment = localStorage.getItem("department");
   const userId = localStorage.getItem("userId");
 
-  // -----------------------------
-  // Fetch Reports (regular + text-only)
-  // -----------------------------
+  // Fetch Reports
   const fetchReports = async () => {
     setLoading(true);
     try {
       const queryObj = {};
-
-      // Filters
       if (filters.category) queryObj.category = filters.category;
       if (filters.status) queryObj.status = filters.status;
       if (filters.severity) queryObj.severity = filters.severity;
@@ -33,24 +35,20 @@ export default function ReportsLists({ darkMode }) {
         queryObj.to = filters.to || undefined;
       }
 
-      // My reports (citizen)
       if (filters.myReports === "true" && userRole === "citizen") {
         queryObj.reporter = userId;
       }
 
-      // Officer → department filter
       if (userRole === "officer" && userDepartment) {
         queryObj.department = userDepartment;
       }
 
-      // Search text
       if (search) queryObj.search = search;
 
       const query = new URLSearchParams(queryObj).toString();
       const res = await API.get(`/reports?${query}`);
       let allReports = res.data.reports || [];
 
-      // Include text reports for all roles
       const textRes = await API.get("/reports/textreports");
       const textReports = textRes.data.reports.map((r) => ({
         ...r,
@@ -71,9 +69,7 @@ export default function ReportsLists({ darkMode }) {
     fetchReports();
   }, [filters, search]);
 
-  // -----------------------------
-  // Citizen: Vote / Cancel Vote
-  // -----------------------------
+  // Citizen Vote
   const handleVote = async (report) => {
     try {
       if (!report.voters?.includes(userId)) {
@@ -89,18 +85,35 @@ export default function ReportsLists({ darkMode }) {
   };
 
   // -----------------------------
-  // Officer: Reject Report
+  // Officer → Open Transfer Modal
   // -----------------------------
-  const handleReject = async (reportId) => {
-    if (!window.confirm("Are you sure you want to reject this report?")) return;
-    try {
-      await API.post(`/reports/${reportId}/reject`);
-      fetchReports();
-    } catch (err) {
-      console.error("Reject failed:", err);
-      alert("Failed to reject report");
-    }
+  const openTransferModal = (reportId) => {
+    setTransferData({ reportId, newDepartment: "", reason: "" });
+    setShowTransferModal(true);
   };
+
+  // -----------------------------
+  // Officer → Submit Transfer
+  // -----------------------------
+const handleTransfer = async () => {
+  if (!transferData.newDepartment || !transferData.reason.trim()) {
+    alert("Please select a department and provide a reason.");
+    return;
+  }
+  try {
+    await API.post(`/transfer/${transferData.reportId}/request`, {
+      newDepartment: transferData.newDepartment,
+      reason: transferData.reason,
+    });
+    alert("Transfer request sent for admin approval.");
+    setShowTransferModal(false);
+    fetchReports();
+  } catch (err) {
+    console.error("Transfer failed:", err);
+    alert(err.response?.data?.message || "Failed to initiate transfer");
+  }
+};
+
 
   const statusColor = {
     Open: "bg-red-100 text-red-700",
@@ -108,6 +121,7 @@ export default function ReportsLists({ darkMode }) {
     "In Progress": "bg-blue-100 text-blue-700",
     Resolved: "bg-green-100 text-green-700",
     Rejected: "bg-gray-200 text-gray-800",
+    "Pending Transfer Approval": "bg-purple-100 text-purple-700",
   };
 
   return (
@@ -116,7 +130,6 @@ export default function ReportsLists({ darkMode }) {
         Civic Reports Dashboard
       </h1>
 
-      {/* Filters & Search */}
       <div className="flex flex-col md:flex-row md:items-end gap-4">
         <ReportsFilter onFilter={setFilters} role={userRole} />
       </div>
@@ -129,7 +142,6 @@ export default function ReportsLists({ darkMode }) {
         className="border p-2 rounded w-full md:w-64 focus:outline-none focus:ring focus:ring-blue-400 dark:bg-gray-800 dark:text-white"
       />
 
-      {/* Reports Table */}
       {loading ? (
         <p className="text-center text-gray-500">Loading reports...</p>
       ) : reports.length === 0 ? (
@@ -196,8 +208,13 @@ export default function ReportsLists({ darkMode }) {
                           View
                         </Button>
                       </Link>
+                      <Link to={`/reports/${r._id}/track`}>
+                        <Button size="sm" variant="secondary">
+                          Track
+                        </Button>
+                      </Link>
 
-                      {canVote && (
+                      {userRole === "citizen" && canVote && (
                         <Button
                           size="sm"
                           variant={hasVoted ? "destructive" : "outline"}
@@ -207,19 +224,14 @@ export default function ReportsLists({ darkMode }) {
                         </Button>
                       )}
 
-                      {!canVote && userRole === "citizen" && (
-                        <span className="text-gray-500 text-sm">
-                          Cannot vote on own report
-                        </span>
-                      )}
-
-                      {userRole === "officer" && r.status !== "Rejected" && (
+                      {/* Officer Transfer button (instead of Reject) */}
+                      {userRole === "officer" && (
                         <Button
                           size="sm"
-                          variant="destructive"
-                          onClick={() => handleReject(r._id)}
+                          variant="outline"
+                          onClick={() => openTransferModal(r._id)}
                         >
-                          Reject
+                          Transfer
                         </Button>
                       )}
                     </td>
@@ -228,6 +240,63 @@ export default function ReportsLists({ darkMode }) {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Transfer Modal */}
+      {showTransferModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-40 flex justify-center items-center z-50">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg w-96">
+            <h2 className="text-xl font-semibold mb-4 text-blue-700 dark:text-blue-300">
+              Transfer Report
+            </h2>
+            <label className="block text-sm font-medium mb-1">
+              New Department
+            </label>
+            <select
+              value={transferData.newDepartment}
+              onChange={(e) =>
+                setTransferData({
+                  ...transferData,
+                  newDepartment: e.target.value,
+                })
+              }
+              className="w-full border rounded p-2 mb-3 dark:bg-gray-700 dark:text-white"
+            >
+              <option value="">Select Department</option>
+              <option value="road">road</option>
+              <option value="sanitation">sanitation</option>
+              <option value="streetlight">streetlight</option>
+              <option value="drainage">drainage</option>
+              <option value="toilet">toilet</option>
+              <option value="water-supply">water-supply</option>
+              <option value="park">park</option>
+              <option value="general">general</option>
+            </select>
+
+            <label className="block text-sm font-medium mb-1">Reason</label>
+            <textarea
+              value={transferData.reason}
+              onChange={(e) =>
+                setTransferData({ ...transferData, reason: e.target.value })
+              }
+              className="w-full border rounded p-2 mb-4 dark:bg-gray-700 dark:text-white"
+              placeholder="Explain why this needs to be transferred"
+              rows={3}
+            ></textarea>
+
+            <div className="flex justify-end space-x-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowTransferModal(false)}
+              >
+                Cancel
+              </Button>
+              <Button variant="default" onClick={handleTransfer}>
+                Submit
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

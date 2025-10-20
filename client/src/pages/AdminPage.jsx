@@ -15,6 +15,7 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
+import { useNavigate } from "react-router-dom";
 
 export default function AdminPage() {
   const [users, setUsers] = useState([]);
@@ -47,6 +48,8 @@ export default function AdminPage() {
     Closed: "#FF5722",
   };
   const ALL_STATUSES = Object.keys(COLORS_STATUS);
+
+  const navigate = useNavigate();
 
   // ------------------- Fetch Users -------------------
   const fetchUsers = async (p = 1) => {
@@ -131,8 +134,66 @@ export default function AdminPage() {
   };
 
   // ------------------- Export Reports -------------------
-  const exportReports = (format = "json") => {
-    window.open(`/api/admin/export/reports?format=${format}`, "_blank");
+  // ------------------- Frontend Export Reports -------------------
+  const exportReports = async (format = "json") => {
+    try {
+      // Fetch reports from backend
+      const res = await API.get("/reports"); // adjust endpoint if needed
+      const reports = res.data.reports || [];
+
+      if (!reports.length) {
+        alert("No reports available to export.");
+        return;
+      }
+
+      let fileContent, mimeType, fileName;
+
+      if (format === "json") {
+        fileContent = JSON.stringify(reports, null, 2);
+        mimeType = "application/json";
+        fileName = "reports.json";
+      } else if (format === "csv") {
+        // Convert JSON to CSV
+        const headers = Object.keys(reports[0]);
+        const csvRows = [
+          headers.join(","), // header row
+          ...reports.map((r) =>
+            headers
+              .map((h) => {
+                let val = r[h];
+                // If object or array, stringify it
+                if (typeof val === "object" && val !== null)
+                  val = JSON.stringify(val);
+                // Escape double quotes
+                if (typeof val === "string")
+                  val = `"${val.replace(/"/g, '""')}"`;
+                return val;
+              })
+              .join(",")
+          ),
+        ];
+        fileContent = csvRows.join("\r\n");
+        mimeType = "text/csv";
+        fileName = "reports.csv";
+      } else {
+        alert("Unsupported export format.");
+        return;
+      }
+
+      // Create blob and trigger download
+      const blob = new Blob([fileContent], { type: mimeType });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Export failed:", err);
+      alert("Failed to export reports.");
+    }
   };
 
   useEffect(() => {
@@ -146,6 +207,21 @@ export default function AdminPage() {
       <h1 className="text-3xl font-bold text-blue-700 dark:text-blue-400">
         BMC Admin Dashboard
       </h1>
+
+      {/* ------------------- Go to Citizen Verification Button ------------------- */}
+      <Button
+        className="bg-blue-600 hover:bg-blue-700 text-white"
+        onClick={() => navigate("/admin/verification")}
+      >
+        Go to Citizen Report Verification
+      </Button>
+      {/* ------------------- Go to Transfer Verification Button ------------------- */}
+      <Button
+        className="bg-purple-600 hover:bg-purple-700 text-white"
+        onClick={() => navigate("/admin/transfer-verification")}
+      >
+        Go to Transfer Request Verification
+      </Button>
 
       {/* ------------------- Users Table ------------------- */}
       <Card>
