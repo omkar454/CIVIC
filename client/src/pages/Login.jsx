@@ -18,58 +18,61 @@ export default function Login({ setUserRole, setUserName }) {
     setError("");
     setLoading(true);
 
-    try {
-      // Step 1: Login and get token
-      const res = await axios.post(
-        "http://localhost:5000/api/auth/login",
-        form
-      );
-      const accessToken = res.data.accessToken || res.data.token;
-      if (!accessToken) throw new Error("No access token returned from server");
+   try {
+  // Step 1: Login and get token
+  const res = await axios.post(
+    "http://localhost:5000/api/auth/login",
+    form
+  );
+  const accessToken = res.data.accessToken || res.data.token;
+  if (!accessToken) throw new Error("No access token returned from server");
 
-      localStorage.setItem("accessToken", accessToken);
+  localStorage.setItem("accessToken", accessToken);
 
-      // Step 2: Fetch user info using token
-      const userRes = await axios.get("http://localhost:5000/api/users/me", {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+  // Step 2: Fetch user info using token
+  const userRes = await axios.get("http://localhost:5000/api/users/me", {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
 
-      const user = userRes.data;
+  const user = userRes.data;
 
-      // ✅ Save user info in localStorage
-      localStorage.setItem("role", user.role);
-      localStorage.setItem("name", user.name);
-      localStorage.setItem("email", user.email);
-      localStorage.setItem("warnings", user.warnings || "0");
-      localStorage.setItem("userId", user._id);
+  // ✅ Check if blocked
+  if (user.blocked) {
+    // Get latest block reason (if any)
+    const lastBlock = user.blockedLogs?.[user.blockedLogs.length - 1];
+    const blockNote = lastBlock?.reason || "No reason provided by admin";
 
-      // ✅ Save department only if officer
-      if (user.role === "officer" && user.department) {
-        localStorage.setItem("department", user.department);
-      } else {
-        localStorage.removeItem("department");
-      }
+    setError(`Your account is blocked. Reason: ${blockNote}`);
+    setLoading(false);
+    return; // Stop login flow
+  }
 
-      // Update global state (if applicable)
-      setUserRole(user.role);
-      setUserName(user.name);
+  // ✅ Save user info in localStorage
+  localStorage.setItem("role", user.role);
+  localStorage.setItem("name", user.name);
+  localStorage.setItem("email", user.email);
+  localStorage.setItem("warnings", user.warnings || "0");
+  localStorage.setItem("userId", user._id);
 
-      // ✅ Redirect based on role
-      if (user.role === "admin") {
-        navigate("/");
-      } else if (user.role === "officer") {
-        navigate("/");
-      } else {
-        navigate("/");
-      }
-    } catch (err) {
-      console.error("Login error:", err);
-      setError(
-        err.response?.data?.message || err.message || "Login failed. Try again."
-      );
-    } finally {
-      setLoading(false);
-    }
+  if (user.role === "officer" && user.department) {
+    localStorage.setItem("department", user.department);
+  } else {
+    localStorage.removeItem("department");
+  }
+
+  setUserRole(user.role);
+  setUserName(user.name);
+
+  // Redirect
+  navigate("/");
+} catch (err) {
+  console.error("Login error:", err);
+  setError(
+    err.response?.data?.message || err.message || "Login failed. Try again."
+  );
+} finally {
+  setLoading(false);
+}
   };
 
   return (

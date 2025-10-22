@@ -51,8 +51,12 @@ router.post("/login", async (req, res) => {
 
     const user = await User.findOne({ email });
     if (!user) return res.status(401).json({ message: "Invalid credentials" });
-    if (user.blocked)
-      return res.status(403).json({ message: "Your account is blocked" });
+    if (user.blocked){
+        const lastBlock = user.blockedLogs?.[user.blockedLogs.length - 1];
+        const blockReason = lastBlock?.reason || "No reason provided by admin";
+      return res
+        .status(403)
+        .json({ message: `Your account is blocked. Reason by admin: ${blockReason}` });}
 
     const isMatch = await bcrypt.compare(password, user.passwordHash);
     if (!isMatch)

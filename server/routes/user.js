@@ -8,7 +8,7 @@ const router = express.Router();
 router.get("/me", auth(), async (req, res) => {
   try {
     const user = await User.findById(req.user.id).select(
-      "name email role department warnings blocked"
+      "name email role department warnings blocked warningLogs blockedLogs"
     );
 
     if (!user) return res.status(404).json({ message: "User not found" });

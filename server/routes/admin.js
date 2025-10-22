@@ -18,28 +18,42 @@ router.post("/warn/:userId", auth("admin"), async (req, res) => {
     const user = await User.findById(req.params.userId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
+    // Add warning
     user.warnings = (user.warnings || 0) + 1;
-    user.warningLogs.push({
+    const warningEntry = {
       reason: reason.trim(),
       admin: req.user._id,
-    });
+      date: new Date(),
+    };
+    user.warningLogs.push(warningEntry);
 
-    // Auto-block if warnings >= 3
-    if (user.warnings >= 3) user.blocked = true;
+    // Auto-block if 3 or more warnings
+    if (user.warnings >= 3 && !user.blocked) {
+      user.blocked = true;
+      user.blockedLogs.push({
+        reason: `User automatically blocked after receiving 3 warnings. Last warning reason: "${reason.trim()}".`,
+        date: new Date(),
+        admin: req.user._id,
+      });
+    }
 
     await user.save();
 
     res.json({
-      message: "User warned",
+      message: user.blocked
+        ? "User warned and auto-blocked after 3 warnings"
+        : "User warned successfully",
       warnings: user.warnings,
       blocked: user.blocked,
       warningLogs: user.warningLogs,
+      blockedLogs: user.blockedLogs,
     });
   } catch (err) {
     console.error("Warn user error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 // -----------------------------
 // Block / Unblock a user (with reason)

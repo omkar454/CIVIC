@@ -12,7 +12,9 @@ import ReportTracking from "./pages/ReportTracking";
 import OfficerQueue from "./pages/OfficerQueue";
 import AdminPage from "./pages/AdminPage";
 import AdminVerification from "./pages/AdminVerification";
-import AdminTransferVerification from "./pages/AdminTransferVerification"; // ✅ NEW
+import AdminTransferVerification from "./pages/AdminTransferVerification";
+import OfficerInspect from "./pages/OfficerInspect";
+import CitizenReportCard from "./pages/CitizenReportCard";
 
 import PrivateRoute from "./components/PrivateRoute";
 import Sidebar from "./components/Sidebar";
@@ -99,6 +101,8 @@ function App() {
             ) : (
               <>
                 <Route path="/" element={<Home />} />
+
+                {/* Officer Routes */}
                 <Route
                   path="/officer-queue"
                   element={
@@ -107,6 +111,8 @@ function App() {
                     </PrivateRoute>
                   }
                 />
+
+                {/* Admin Routes */}
                 <Route
                   path="/admin"
                   element={
@@ -123,7 +129,6 @@ function App() {
                     </PrivateRoute>
                   }
                 />
-                {/* ✅ NEW ROUTE for Transfer Verification */}
                 <Route
                   path="/admin/transfer-verification"
                   element={
@@ -132,7 +137,24 @@ function App() {
                     </PrivateRoute>
                   }
                 />
+                <Route
+                  path="/admin/inspect/:id"
+                  element={
+                    <PrivateRoute roles={["admin"]}>
+                      <OfficerInspect />
+                    </PrivateRoute>
+                  }
+                />
+                <Route
+                  path="/admin/citizen-inspect/:id"
+                  element={
+                    <PrivateRoute roles={["admin"]}>
+                      <CitizenReportCard />
+                    </PrivateRoute>
+                  }
+                />
 
+                {/* Citizen Routes */}
                 <Route
                   path="/report"
                   element={

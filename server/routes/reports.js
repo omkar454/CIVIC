@@ -22,6 +22,7 @@ const categoryToDept = {
   "water-supply": "water-supply",
   drainage: "drainage",
   "waste-management": "waste-management",
+  
   park: "park",
   other: "general",
 };
@@ -53,9 +54,85 @@ async function geocodeAddress(address) {
     console.error("Geocoding error:", err);
     return null;
   }
-}
+  }
 
-/* ------------------------------------------------------------
+  /* ------------------------------------------------------------------
+     🚨 SLA & Auto Escalation Route
+  -------------------------------------------------------------------*/
+  router.get("/check-sla", auth("admin"), async (req, res) => {
+    try {
+      const now = new Date();
+  
+      // Fetch active reports (both geocoded and text)
+      const reports = await Report.find({
+        status: { $in: ["Open", "Acknowledged", "In Progress"] },
+        escalated: { $ne: true },
+      }).populate("assignedTo", "name email role department");
+  
+      const escalatedReports = [];
+  
+      for (const r of reports) {
+        // SLA days based on priority score
+        let slaDays = 5;
+        if (r.priorityScore > 30) slaDays = 2;
+        else if (r.priorityScore > 20) slaDays = 3;
+        else if (r.priorityScore > 10) slaDays = 4;
+  
+        const createdAt = new Date(r.createdAt);
+        const deadline = new Date(createdAt);
+        deadline.setDate(deadline.getDate() + slaDays);
+  
+        if (now > deadline) {
+          // 🚨 Overdue → Mark as escalated and notify
+          r.escalated = true;
+          r.escalationDetails = {
+            overdueBy: Math.floor((now - deadline) / (1000 * 60 * 60 * 24)),
+            checkedAt: now,
+            slaDays,
+          };
+          await r.save();
+  
+          // Notify assigned officer (if exists)
+          if (r.assignedTo) {
+            await Notification.create({
+              user: r.assignedTo._id,
+              message: `⚠️ Report "${r.title}" is overdue by ${r.escalationDetails.overdueBy} day(s). Please take action immediately.`,
+            });
+          }
+  
+          // Notify admin(s)
+          const admins = await User.find({ role: "admin" });
+          const adminNotifs = admins.map((a) => ({
+            user: a._id,
+            message: `🚨 Report "${r.title}" (Dept: ${r.department}) breached SLA. Officer: ${
+              r.assignedTo?.name || "Unassigned"
+            }.`,
+          }));
+          await Notification.insertMany(adminNotifs);
+  
+          escalatedReports.push({
+            id: r._id,
+            title: r.title,
+            department: r.department,
+            officer: r.assignedTo?.name,
+            overdueBy: r.escalationDetails.overdueBy,
+            slaDays,
+          });
+        }
+      }
+  
+      res.json({
+        message: "SLA check completed",
+        escalatedCount: escalatedReports.length,
+        escalatedReports,
+      });
+    } catch (err) {
+      console.error("SLA check error:", err);
+      res.status(500).json({ message: "Server error" });
+    }
+  });
+
+  /* ------------------------------------------------------------
    📝 Create Report
 ------------------------------------------------------------ */
 router.post("/", auth("citizen"), async (req, res) => {
@@ -120,7 +197,7 @@ router.post("/", auth("citizen"), async (req, res) => {
     }
 
     /* ------------------------------------------------------------
-       CASE 2️⃣: Geocoded Report (with coordinates)
+    CASE 2️⃣: Geocoded Report (with coordinates)
     ------------------------------------------------------------ */
     if ((!coordinates || coordinates.length !== 2) && address) {
       const geo = await geocodeAddress(address);
@@ -130,7 +207,7 @@ router.post("/", auth("citizen"), async (req, res) => {
     if (!coordinates || coordinates.length !== 2) {
       return res.status(400).json({
         message:
-          "Valid coordinates or address required to create a geocoded report.",
+        "Valid coordinates or address required to create a geocoded report.",
       });
     }
 
@@ -149,9 +226,9 @@ router.post("/", auth("citizen"), async (req, res) => {
       },
       priorityScore: calculatePriority(severity, 0),
     };
-
+    
     const report = await Report.create(reportData);
-
+    
     if (questionToOfficer.trim()) {
       report.comments.push({
         message: questionToOfficer.trim(),
@@ -159,7 +236,7 @@ router.post("/", auth("citizen"), async (req, res) => {
       });
       await report.save();
     }
-
+    
     const officers = await User.find({ role: "officer", department });
     if (officers.length) {
       const notifications = officers.map((o) => ({
@@ -178,6 +255,120 @@ router.post("/", auth("citizen"), async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+router.get("/officer/:id", auth("admin"), async (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log("🟢 Officer Inspect API called for ID:", id);
+
+    // Fetch officer details
+    const officer = await User.findById(id).select("name email department role");
+    console.log("👤 Officer fetched:", officer);
+
+    if (!officer) {
+      console.warn("⚠️ Officer not found in database for ID:", id);
+      return res.status(404).json({ message: "Officer not found" });
+    }
+
+    // ✅ Fetch reports based on officer's department
+    console.log("🔍 Fetching reports for department:", officer.department);
+
+    const reports = await Report.find({ department: officer.department })
+      .populate("reporter", "name email role")
+      .sort({ createdAt: -1 });
+
+    const textReports = await TextAddressReport.find({
+      department: officer.department,
+    })
+      .populate("reporter", "name email role")
+      .sort({ createdAt: -1 });
+
+    console.log("🧾 Reports found:", reports.length);
+    console.log("📄 Text Reports found:", textReports.length);
+
+    const allReports = [...reports, ...textReports];
+    console.log("📊 Total Combined Reports:", allReports.length);
+
+    const processed = allReports.map((r, index) => {
+      let slaDays = 5;
+      if (r.priorityScore > 30) slaDays = 2;
+      else if (r.priorityScore > 20) slaDays = 3;
+      else if (r.priorityScore > 10) slaDays = 4;
+
+      const createdAt = new Date(r.createdAt);
+      const resolvedAt =
+        r.status === "Resolved" || r.status === "Rejected"
+          ? new Date(r.updatedAt)
+          : null;
+
+      const deadline = new Date(createdAt);
+      deadline.setDate(deadline.getDate() + slaDays);
+
+      let slaStatus = "Pending";
+      if (resolvedAt)
+        slaStatus = resolvedAt <= deadline ? "On Time" : "Overdue";
+      else if (Date.now() > deadline) slaStatus = "Overdue";
+
+      console.log(`📍 Report ${index + 1}:`, {
+        title: r.title,
+        status: r.status,
+        slaDays,
+        slaStatus,
+        createdAt,
+        resolvedAt,
+      });
+
+      return {
+        id: r._id,
+        title: r.title,
+        department: r.department,
+        priorityScore: r.priorityScore,
+        severity: r.severity,
+        status: r.status,
+        createdAt,
+        resolvedAt,
+        slaDays,
+        slaStatus,
+      };
+    });
+
+    console.log("✅ Processed reports count:", processed.length);
+
+    res.json({
+      officerId: officer._id,
+      officer,
+      reports: processed,
+    });
+
+    console.log("✅ Response sent successfully for officer:", officer.name);
+  } catch (err) {
+    console.error("❌ Officer route error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+// Fetch single text report by ID
+router.get(
+  "/textreports/:id",
+  auth(["admin", "officer", "citizen"]),
+  async (req, res) => {
+    try {
+      const report = await TextAddressReport.findById(req.params.id)
+        .populate("reporter", "name email role")
+        .populate("assignedTo", "name email role department")
+        .populate("comments.by", "name email role")
+        .populate("comments.repliedBy", "name email role");
+
+      if (!report) return res.status(404).json({ message: "Report not found" });
+
+      res.json(report);
+    } catch (err) {
+      console.error("Fetch text report error:", err);
+      res.status(500).json({ message: "Server error" });
+    }
+  }
+);
 
 // Allow all roles: citizen, officer, admin
 router.get(
@@ -214,27 +405,6 @@ router.get(
   }
 );
 
-// Fetch single text report by ID
-router.get(
-  "/textreports/:id",
-  auth(["admin", "officer", "citizen"]),
-  async (req, res) => {
-    try {
-      const report = await TextAddressReport.findById(req.params.id)
-        .populate("reporter", "name email role")
-        .populate("assignedTo", "name email role department")
-        .populate("comments.by", "name email role")
-        .populate("comments.repliedBy", "name email role");
-
-      if (!report) return res.status(404).json({ message: "Report not found" });
-
-      res.json(report);
-    } catch (err) {
-      console.error("Fetch text report error:", err);
-      res.status(500).json({ message: "Server error" });
-    }
-  }
-);
 
 /* ------------------------------------------------------------------
    📋 Fetch Reports (with filters)
@@ -638,6 +808,82 @@ router.post("/:id/assign", auth("admin"), async (req, res) => {
     res.json({ message: "Report assigned successfully", report });
   } catch (err) {
     console.error("Assign officer error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+// ------------------------------
+// GET Citizen Report Card
+// ------------------------------
+router.get("/citizen/:id", auth("admin"), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Fetch citizen
+    const citizen = await User.findById(id).select(
+      "name email role warnings blocked"
+    );
+    if (!citizen) {
+      return res.status(404).json({ message: "Citizen not found" });
+    }
+
+    // Fetch all reports submitted by citizen
+    const reports = await Report.find({ reporter: id })
+      .populate("assignedTo", "name department role")
+      .sort({ createdAt: -1 });
+
+    const textReports = await TextAddressReport.find({ reporter: id })
+      .populate("assignedTo", "name department role")
+      .sort({ createdAt: -1 });
+
+    const allReports = [...reports, ...textReports];
+
+    // Fetch transfer logs for all reports
+    const reportIds = allReports.map((r) => r._id);
+    const transfers = await TransferLog.find({ report: { $in: reportIds } })
+      .populate("requestedBy", "name email role");
+
+    // Process reports for frontend
+    const processedReports = allReports.map((r) => {
+      const reportTransfers = transfers
+        .filter((t) => t.report.toString() === r._id.toString())
+        .map((t) => ({
+          oldDepartment: t.oldDepartment,
+          newDepartment: t.newDepartment,
+          reason: t.reason,
+          status: t.status,
+          adminVerification: t.adminVerification,
+          requestedBy: t.requestedBy,
+          createdAt: t.createdAt,
+        }));
+
+      return {
+        id: r._id,
+        title: r.title,
+        category: r.category,
+        severity: r.severity,
+        department: r.department,
+        assignedTo: r.assignedTo,
+        status: r.status,
+        priorityScore: r.priorityScore,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+        rejected:
+          r.citizenAdminVerification?.verified === false ||
+          r.status === "Rejected",
+        transfers: reportTransfers,
+      };
+    });
+
+    // Response
+    res.json({
+      citizenId: citizen._id,
+      citizen,
+      reports: processedReports,
+    });
+  } catch (err) {
+    console.error("❌ Citizen report fetch error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });

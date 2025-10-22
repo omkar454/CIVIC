@@ -19,17 +19,19 @@ import { useNavigate } from "react-router-dom";
 
 export default function AdminPage() {
   const [users, setUsers] = useState([]);
+  const [officers, setOfficers] = useState([]);
   const [analytics, setAnalytics] = useState(null);
+  const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
-  const [loadingUsers, setLoadingUsers] = useState(true);
   const [totalPages, setTotalPages] = useState(1);
+  const [slaLoading, setSlaLoading] = useState(false);
 
-  // States for warning/block reason
   const [reasonUserId, setReasonUserId] = useState(null);
-  const [reasonAction, setReasonAction] = useState(null); // "warn" or "block"
+  const [reasonAction, setReasonAction] = useState(null);
   const [reasonText, setReasonText] = useState("");
 
-  // Colors
+  const navigate = useNavigate();
+
   const COLORS_CATEGORY = [
     "#1E88E5",
     "#43A047",
@@ -49,25 +51,26 @@ export default function AdminPage() {
   };
   const ALL_STATUSES = Object.keys(COLORS_STATUS);
 
-  const navigate = useNavigate();
-
-  // ------------------- Fetch Users -------------------
-  const fetchUsers = async (p = 1) => {
-    setLoadingUsers(true);
+  // ---------------- Fetch all users & officers ----------------
+  const fetchUsersAndOfficers = async (p = 1) => {
+    setLoading(true);
     try {
-      const res = await API.get(`/admin/users?page=${p}&limit=10`);
-      setUsers(res.data.users || []);
+      const res = await API.get(`/admin/users?page=${p}&limit=20`);
+      const all = res.data.users || [];
+      setUsers(all.filter((u) => u.role === "citizen"));
+      setOfficers(all.filter((u) => u.role === "officer"));
       setTotalPages(res.data.totalPages || 1);
       setPage(p);
     } catch (err) {
       console.error("Fetch users failed:", err);
       setUsers([]);
+      setOfficers([]);
     } finally {
-      setLoadingUsers(false);
+      setLoading(false);
     }
   };
 
-  // ------------------- Fetch Analytics -------------------
+  // ---------------- Fetch Analytics ----------------
   const fetchAnalytics = async () => {
     try {
       const res = await API.get("/admin/analytics");
@@ -86,13 +89,12 @@ export default function AdminPage() {
     }
   };
 
-  // ------------------- Warn / Block with reason -------------------
+  // ---------------- Warn / Block ----------------
   const submitReasonAction = async () => {
     if (!reasonText.trim()) {
       alert("Reason is required.");
       return;
     }
-
     try {
       if (reasonAction === "warn") {
         await API.post(`/admin/warn/${reasonUserId}`, { reason: reasonText });
@@ -102,11 +104,10 @@ export default function AdminPage() {
           reason: reasonText,
         });
       }
-      // Reset reason states
       setReasonUserId(null);
       setReasonAction(null);
       setReasonText("");
-      fetchUsers(page);
+      fetchUsersAndOfficers(page);
     } catch (err) {
       console.error(err);
       alert("Action failed.");
@@ -123,7 +124,7 @@ export default function AdminPage() {
     if (isBlocked) {
       if (window.confirm("Unblock this user?")) {
         API.post(`/admin/block/${userId}`, { block: false }).then(() =>
-          fetchUsers(page)
+          fetchUsersAndOfficers(page)
         );
       }
     } else {
@@ -133,38 +134,55 @@ export default function AdminPage() {
     }
   };
 
-  // ------------------- Export Reports -------------------
-  // ------------------- Frontend Export Reports -------------------
+  // ---------------- Run SLA Check ----------------
+  const handleRunSLA = async () => {
+    if (!window.confirm("Run SLA check now?")) return;
+    setSlaLoading(true);
+    try {
+      const res = await API.get("/reports/check-sla");
+      const { escalatedCount, escalatedReports } = res.data;
+      alert(
+        `SLA Check completed.\nEscalated Reports: ${escalatedCount}\n` +
+          (escalatedReports
+            .map(
+              (r) =>
+                `- ${r.title} (Dept: ${r.department}, Overdue: ${r.overdueBy} days)`
+            )
+            .join("\n") || "")
+      );
+    } catch (err) {
+      console.error("SLA check failed:", err);
+      alert("Failed to run SLA check.");
+    } finally {
+      setSlaLoading(false);
+    }
+  };
+
+  // ---------------- Export Reports ----------------
   const exportReports = async (format = "json") => {
     try {
-      // Fetch reports from backend
-      const res = await API.get("/reports"); // adjust endpoint if needed
+      const res = await API.get("/reports");
       const reports = res.data.reports || [];
-
       if (!reports.length) {
-        alert("No reports available to export.");
+        alert("No reports to export.");
         return;
       }
 
       let fileContent, mimeType, fileName;
-
       if (format === "json") {
         fileContent = JSON.stringify(reports, null, 2);
         mimeType = "application/json";
         fileName = "reports.json";
       } else if (format === "csv") {
-        // Convert JSON to CSV
         const headers = Object.keys(reports[0]);
         const csvRows = [
-          headers.join(","), // header row
+          headers.join(","),
           ...reports.map((r) =>
             headers
               .map((h) => {
                 let val = r[h];
-                // If object or array, stringify it
                 if (typeof val === "object" && val !== null)
                   val = JSON.stringify(val);
-                // Escape double quotes
                 if (typeof val === "string")
                   val = `"${val.replace(/"/g, '""')}"`;
                 return val;
@@ -175,20 +193,14 @@ export default function AdminPage() {
         fileContent = csvRows.join("\r\n");
         mimeType = "text/csv";
         fileName = "reports.csv";
-      } else {
-        alert("Unsupported export format.");
-        return;
       }
 
-      // Create blob and trigger download
       const blob = new Blob([fileContent], { type: mimeType });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
       a.download = fileName;
-      document.body.appendChild(a);
       a.click();
-      a.remove();
       window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error("Export failed:", err);
@@ -197,185 +209,184 @@ export default function AdminPage() {
   };
 
   useEffect(() => {
-    fetchUsers();
+    fetchUsersAndOfficers();
     fetchAnalytics();
   }, []);
 
-  // ------------------- Render -------------------
+  // ---------------- Render Table Helper ----------------
+  const renderUserTable = (list, title) => (
+    <Card className="mb-6">
+      <CardContent>
+        <h2 className="text-xl font-semibold mb-4">{title}</h2>
+        {loading ? (
+          <p>Loading...</p>
+        ) : list.length === 0 ? (
+          <p>No records found.</p>
+        ) : (
+          <div className="overflow-x-auto border rounded shadow-lg">
+            <table className="w-full border-collapse table-auto">
+              <thead className="bg-gray-100 dark:bg-gray-800 dark:text-white">
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Warnings</th>
+                  <th>Blocked</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((u) => (
+                  <tr
+                    key={u._id}
+                    className="border-t hover:bg-gray-50 dark:hover:bg-gray-700"
+                  >
+                    <td>{u.name}</td>
+                    <td>{u.email}</td>
+                    <td>{u.role}</td>
+                    <td>{u.warnings || 0}</td>
+                    <td>{u.blocked ? "Yes" : "No"}</td>
+                   <td className="space-y-2">
+  <div className="space-x-2">
+    <Button size="sm" onClick={() => handleWarnClick(u._id)}>
+      Warn
+    </Button>
+    <Button
+      size="sm"
+      variant={u.blocked ? "default" : "destructive"}
+      onClick={() => handleBlockClick(u._id, u.blocked)}
+    >
+      {u.blocked ? "Unblock" : "Block"}
+    </Button>
+
+    {/* Inspect Button - Different for Citizen vs Officer */}
+    {u.role === "citizen" ? (
+      <Button
+        size="sm"
+        className="bg-blue-600 text-white"
+        onClick={() => navigate(`/admin/citizen-inspect/${u._id}`)}
+      >
+        Inspect
+      </Button>
+    ) : (
+      <Button
+        size="sm"
+        className="bg-blue-600 text-white"
+        onClick={() => navigate(`/admin/inspect/${u._id}`)}
+      >
+        Inspect
+      </Button>
+    )}
+  </div>
+
+  {reasonUserId === u._id && reasonAction && (
+    <div className="mt-2 space-x-2">
+      <input
+        type="text"
+        placeholder="Enter reason..."
+        className="border p-1 rounded w-72"
+        value={reasonText}
+        onChange={(e) => setReasonText(e.target.value)}
+      />
+      <Button size="sm" onClick={submitReasonAction}>
+        Send
+      </Button>
+      <Button
+        size="sm"
+        variant="default"
+        onClick={() => {
+          setReasonUserId(null);
+          setReasonAction(null);
+          setReasonText("");
+        }}
+      >
+        Cancel
+      </Button>
+    </div>
+  )}
+</td>
+
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6">
       <h1 className="text-3xl font-bold text-blue-700 dark:text-blue-400">
         BMC Admin Dashboard
       </h1>
 
-      {/* ------------------- Go to Citizen Verification Button ------------------- */}
-      <Button
-        className="bg-blue-600 hover:bg-blue-700 text-white"
-        onClick={() => navigate("/admin/verification")}
-      >
-        Go to Citizen Report Verification
-      </Button>
-      {/* ------------------- Go to Transfer Verification Button ------------------- */}
-      <Button
-        className="bg-purple-600 hover:bg-purple-700 text-white"
-        onClick={() => navigate("/admin/transfer-verification")}
-      >
-        Go to Transfer Request Verification
-      </Button>
+      {/* Quick Access Buttons */}
+      <div className="flex flex-wrap gap-3">
+        <Button
+          className="bg-blue-600 hover:bg-blue-700 text-white"
+          onClick={() => navigate("/admin/verification")}
+        >
+          Citizen Report Verification
+        </Button>
+        <Button
+          className="bg-purple-600 hover:bg-purple-700 text-white"
+          onClick={() => navigate("/admin/transfer-verification")}
+        >
+          Transfer Request Verification
+        </Button>
+        <Button
+          className="bg-red-600 hover:bg-red-700 text-white"
+          disabled={slaLoading}
+          onClick={handleRunSLA}
+        >
+          {slaLoading ? "Running SLA Check..." : "Run SLA Check"}
+        </Button>
+      </div>
 
-      {/* ------------------- Users Table ------------------- */}
-      <Card>
-        <CardContent>
-          <h2 className="text-xl font-semibold mb-4">Users</h2>
-          {loadingUsers ? (
-            <p>Loading users...</p>
-          ) : users.length === 0 ? (
-            <p>No users found.</p>
-          ) : (
-            <div className="overflow-x-auto border rounded shadow-lg">
-              <table className="w-full border-collapse table-auto">
-                <thead className="bg-gray-100 dark:bg-gray-800 dark:text-white">
-                  <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Role</th>
-                    <th>Warnings</th>
-                    <th>Blocked</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {users.map((u) => (
-                    <tr
-                      key={u._id}
-                      className="border-t hover:bg-gray-50 dark:hover:bg-gray-700"
-                    >
-                      <td>{u.name}</td>
-                      <td>{u.email}</td>
-                      <td>{u.role}</td>
-                      <td>{u.warnings || 0}</td>
-                      <td>{u.blocked ? "Yes" : "No"}</td>
-                      <td className="space-y-2">
-                        <div className="space-x-2">
-                          <Button
-                            size="sm"
-                            onClick={() => handleWarnClick(u._id)}
-                          >
-                            Warn
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant={u.blocked ? "default" : "destructive"}
-                            onClick={() => handleBlockClick(u._id, u.blocked)}
-                          >
-                            {u.blocked ? "Unblock" : "Block"}
-                          </Button>
-                        </div>
+      {/* Users and Officers Tables */}
+      {renderUserTable(users, "Citizens")}
+      {renderUserTable(officers, "Officers")}
 
-                        {/* Reason textbox */}
-                        {reasonUserId === u._id && reasonAction && (
-                          <div className="mt-2 space-x-2">
-                            <input
-                              type="text"
-                              placeholder="Enter reason (required)..."
-                              className="border p-1 rounded w-72"
-                              value={reasonText}
-                              onChange={(e) => setReasonText(e.target.value)}
-                            />
-                            <Button size="sm" onClick={submitReasonAction}>
-                              Send
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="default"
-                              onClick={() => {
-                                setReasonUserId(null);
-                                setReasonAction(null);
-                                setReasonText("");
-                              }}
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="mt-4 flex justify-center gap-2">
-              {Array.from({ length: totalPages }, (_, i) => (
-                <Button
-                  key={i + 1}
-                  size="sm"
-                  variant={page === i + 1 ? "primary" : "default"}
-                  onClick={() => fetchUsers(i + 1)}
-                >
-                  {i + 1}
-                </Button>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* ------------------- Export Reports ------------------- */}
+      {/* Export Reports */}
       <Card>
         <CardContent className="space-y-3">
-          <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">
-            Export Reports for Analysis
-          </h2>
-          <p className="text-gray-600 dark:text-gray-300 text-sm leading-relaxed">
-            Export all civic issue reports in <strong>JSON</strong> or{" "}
-            <strong>CSV</strong> format.
-          </p>
-          <div className="flex flex-wrap gap-4 pt-2">
+          <h2 className="text-xl font-semibold">Export Reports</h2>
+          <div className="flex flex-wrap gap-3">
             <Button
               className="bg-blue-600 hover:bg-blue-700 text-white"
               onClick={() => exportReports("json")}
             >
-              📄 Export as JSON
+              Export JSON
             </Button>
             <Button
               className="bg-green-600 hover:bg-green-700 text-white"
               onClick={() => exportReports("csv")}
             >
-              📊 Export as CSV
+              Export CSV
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* ------------------- Analytics ------------------- */}
+      {/* Analytics */}
       {analytics && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Reports by Category */}
           <Card>
             <CardContent>
-              <h2 className="text-xl font-semibold mb-4">
-                Reports by Category
-              </h2>
+              <h2 className="text-xl font-semibold mb-4">Reports by Category</h2>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={analytics.byCategory || []}>
                   <XAxis dataKey="category" />
                   <YAxis />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#f9fafb",
-                      borderRadius: "8px",
-                    }}
-                  />
-                  <Legend formatter={() => "Reports per Category"} />
+                  <Tooltip />
+                  <Legend />
                   <Bar dataKey="count">
-                    {(analytics.byCategory || []).map((entry, index) => (
+                    {(analytics.byCategory || []).map((entry, i) => (
                       <Cell
-                        key={`cell-${index}`}
-                        fill={COLORS_CATEGORY[index % COLORS_CATEGORY.length]}
+                        key={i}
+                        fill={COLORS_CATEGORY[i % COLORS_CATEGORY.length]}
                       />
                     ))}
                   </Bar>
@@ -384,7 +395,6 @@ export default function AdminPage() {
             </CardContent>
           </Card>
 
-          {/* Reports by Status */}
           <Card>
             <CardContent>
               <h2 className="text-xl font-semibold mb-4">Reports by Status</h2>
@@ -392,20 +402,15 @@ export default function AdminPage() {
                 <BarChart data={analytics.byStatus || []}>
                   <XAxis dataKey="status" />
                   <YAxis />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: "#f9fafb",
-                      borderRadius: "8px",
-                    }}
-                  />
-                  <Legend formatter={() => "Reports per Status"} />
+                  <Tooltip />
+                  <Legend />
                   <Bar dataKey="count">
-                    {(analytics.byStatus || []).map((entry, index) => (
+                    {(analytics.byStatus || []).map((entry, i) => (
                       <Cell
-                        key={`cell-status-${index}`}
+                        key={i}
                         fill={
                           COLORS_STATUS[entry.status] ||
-                          COLORS_CATEGORY[index % COLORS_CATEGORY.length]
+                          COLORS_CATEGORY[i % COLORS_CATEGORY.length]
                         }
                       />
                     ))}
@@ -415,7 +420,6 @@ export default function AdminPage() {
             </CardContent>
           </Card>
 
-          {/* Resolution Trend */}
           <Card className="md:col-span-2">
             <CardContent>
               <h2 className="text-xl font-semibold mb-4">Resolution Trend</h2>

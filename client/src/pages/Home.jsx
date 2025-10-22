@@ -5,6 +5,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import HeatmapLayer from "../components/HeatmapLayer";
+import API from "../services/api.js"
 
 // Recharts
 import {
@@ -64,17 +65,34 @@ const STATUS_COLORS = {
 export default function Home() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
+   const [userData, setUserData] = useState(null);
 
   const navigate = useNavigate();
   const token = localStorage.getItem("accessToken");
   const role = localStorage.getItem("role");
   const userDepartment = localStorage.getItem("department");
-  const userWarnings = parseInt(localStorage.getItem("warnings") || "0");
+  // const userWarnings = parseInt(localStorage.getItem("warnings") || "0");
 
   // Redirect if not logged in
   useEffect(() => {
     if (!token) navigate("/login");
   }, [token, navigate]);
+  
+// Fetch user data from backend instead of localStorage
+useEffect(() => {
+  const fetchUser = async () => {
+    try {
+      const res = await axios.get(`http://localhost:5000/api/users/me`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setUserData(res.data);
+    } catch (err) {
+      console.error("Failed to fetch user data:", err);
+    }
+  };
+  if (token && role === "citizen") fetchUser();
+  if (token && role === "officer") fetchUser();
+}, [token, role]);
 
   // Fetch reports
   useEffect(() => {
@@ -246,11 +264,20 @@ export default function Home() {
       </h2>
 
       {/* Warning Banner */}
-      {userWarnings > 0 && (
+      {userData?.warnings > 0 && (
         <div className="bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 px-4 py-2 rounded mb-6 border border-yellow-400">
-          ⚠️ You have <strong>{userWarnings}</strong> warning
-          {userWarnings > 1 ? "s" : ""}. After 3 warnings, your account will be
-          blocked automatically.
+          ⚠️ You have <strong>{userData.warnings}</strong> warning
+          {userData.warnings > 1 ? "s" : ""}. After 3 warnings, your account
+          will be blocked automatically.
+          {userData.warningLogs?.length > 0 && (
+            <ul className="list-disc pl-6 mt-2 text-sm text-yellow-700 dark:text-yellow-200">
+              {userData.warningLogs.map((w) => (
+                <li key={w._id}>
+                  {new Date(w.date).toLocaleDateString()}: Reason by admin:  {w.reason}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

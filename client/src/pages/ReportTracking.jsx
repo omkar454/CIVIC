@@ -1,4 +1,3 @@
-// src/pages/ReportTracking.jsx
 import { useState, useEffect } from "react";
 import { useParams, Link } from "react-router-dom";
 import API from "../services/api";
@@ -11,6 +10,8 @@ import {
   Clock,
   FileWarning,
   GitPullRequest,
+  AlertTriangle,
+  CheckCircle,
 } from "lucide-react";
 
 export default function ReportTracking({ darkMode }) {
@@ -18,7 +19,6 @@ export default function ReportTracking({ darkMode }) {
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Role → color mapping
   const roleColors = {
     citizen: "bg-blue-500",
     officer: "bg-green-500",
@@ -26,12 +26,10 @@ export default function ReportTracking({ darkMode }) {
     system: "bg-gray-500",
   };
 
-  // Fetch report + transfer logs
   const fetchReport = async () => {
     try {
       setLoading(true);
       const res = await API.get(`/reports/${id}`);
-      console.log("Fetched report:", res.data); // Debug
       setReport(res.data);
     } catch (err) {
       console.error("Failed to fetch report:", err);
@@ -45,7 +43,6 @@ export default function ReportTracking({ darkMode }) {
     fetchReport();
   }, [id]);
 
-  // Icon helper
   const getIcon = (role, type = "status") => {
     if (type === "transfer")
       return <GitPullRequest className="w-5 h-5 text-white" />;
@@ -85,7 +82,6 @@ export default function ReportTracking({ darkMode }) {
       </div>
     );
 
-  // Render user safely
   const renderUser = (user) => {
     if (!user) return "Unknown";
     if (typeof user === "string") return user;
@@ -94,7 +90,28 @@ export default function ReportTracking({ darkMode }) {
       : JSON.stringify(user);
   };
 
-  // Combine statusHistory + transferLogs
+  // --- 🧮 SLA Calculation ---
+  const calculateSLA = () => {
+    const priority = report.priorityScore || 0;
+    let slaDays = 5;
+    if (priority > 30) slaDays = 2;
+    else if (priority > 20) slaDays = 3;
+    else if (priority > 10) slaDays = 4;
+
+    const created = new Date(report.createdAt);
+    const deadline = new Date(created);
+    deadline.setDate(deadline.getDate() + slaDays);
+
+    const now = new Date();
+    const diffDays = Math.floor((deadline - now) / (1000 * 60 * 60 * 24));
+    const overdue = diffDays < 0;
+    const remainingDays = Math.abs(diffDays);
+
+    return { slaDays, deadline, overdue, remainingDays };
+  };
+
+  const { slaDays, deadline, overdue, remainingDays } = calculateSLA();
+
   const timeline = [
     ...(report.statusHistory || []),
     ...(report.transferLogs || []).map((t) => {
@@ -121,7 +138,6 @@ export default function ReportTracking({ darkMode }) {
     }),
   ];
 
-  // Sort timeline ascending
   timeline.sort((a, b) => new Date(a.at) - new Date(b.at));
 
   return (
@@ -138,7 +154,7 @@ export default function ReportTracking({ darkMode }) {
         </Link>
       </div>
 
-      {/* Basic Info */}
+      {/* Basic Info + SLA */}
       <section className="rounded-lg p-5 bg-white dark:bg-gray-800 shadow-md border border-gray-200 dark:border-gray-700">
         <h2 className="text-2xl font-semibold mb-2">{report.title}</h2>
         <p className="text-gray-700 dark:text-gray-300 mb-2">
@@ -157,7 +173,47 @@ export default function ReportTracking({ darkMode }) {
               {report.status}
             </Badge>
           </p>
+          <p>
+            <strong>Priority Score:</strong> {report.priorityScore || 0}
+          </p>
         </div>
+
+        {/* SLA Section */}
+        <div className="mt-4 p-3 rounded-md border bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-700">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm">
+                <strong>SLA Limit:</strong> {slaDays} days
+              </p>
+              <p className="text-sm">
+                <strong>Deadline:</strong>{" "}
+                {deadline.toLocaleDateString(undefined, {
+                  dateStyle: "medium",
+                })}
+              </p>
+              <p className="text-sm">
+                <strong>Status:</strong>{" "}
+                {overdue ? (
+                  <span className="text-red-500 font-medium">
+                    Overdue by {remainingDays} day(s)
+                  </span>
+                ) : (
+                  <span className="text-green-600 font-medium">
+                    On Time — {remainingDays} day(s) left
+                  </span>
+                )}
+              </p>
+            </div>
+            <div>
+              {overdue ? (
+                <AlertTriangle className="w-8 h-8 text-red-500" />
+              ) : (
+                <CheckCircle className="w-8 h-8 text-green-500" />
+              )}
+            </div>
+          </div>
+        </div>
+
         <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
           <p>
             <strong>Reported By:</strong> {renderUser(report.reporter)}
@@ -191,7 +247,6 @@ export default function ReportTracking({ darkMode }) {
 
             return (
               <div key={idx} className="mb-6 relative">
-                {/* Dot */}
                 <span
                   className={`absolute -left-3 w-6 h-6 flex items-center justify-center rounded-full shadow-md ${color}`}
                 >
@@ -200,7 +255,6 @@ export default function ReportTracking({ darkMode }) {
                     : getIcon(entry.actorRole)}
                 </span>
 
-                {/* Content */}
                 <div className="p-4 rounded-lg shadow bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
                   <div className="flex justify-between items-center">
                     <span className="font-semibold text-gray-900 dark:text-gray-100">
