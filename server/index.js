@@ -17,7 +17,7 @@ import adminVerificationRoutes from "./routes/adminVerification.js";
 import transferRoutes from "./routes/transfer.js"; // ✅ Import transfer routes
 import officerAnalyticsRoutes from "./routes/officerAnalytics.js";
 import citizenRoutes from "./routes/citizenAnalytics.js";
-
+import qrCodeRoutes from "./routes/qrCode.js";
 
 dotenv.config({ path: "./.env" });
 
@@ -45,8 +45,7 @@ app.use("/api/admin/verification", adminVerificationRoutes); // ✅ New verifica
 app.use("/api/transfer", transferRoutes); // ✅ Register transfer routes
 app.use("/api/officer", officerAnalyticsRoutes);
 app.use("/api/citizen", citizenRoutes);
-
-
+app.use("/api/qr", qrCodeRoutes);
 
 // Health check
 app.get("/", (req, res) => res.json({ message: "Server is working 🚀" }));

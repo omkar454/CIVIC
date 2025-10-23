@@ -27,6 +27,8 @@ export default function ReportDetail() {
   const [adminNote, setAdminNote] = useState(""); // For admin verification
   const [officerFiles, setOfficerFiles] = useState([]); // selected files
   const [uploadedUrls, setUploadedUrls] = useState([]); // Cloudinary uploaded URLs
+  const [qrCodeUrl, setQrCodeUrl] = useState(null);
+
 
   const availableStatuses = [
     "Open",
@@ -110,6 +112,17 @@ export default function ReportDetail() {
   useEffect(() => {
     fetchReport();
   }, [id]);
+
+const generateQRCode = async () => {
+  try {
+    const type = report.isTextReport ? "text-report" : "report";
+    const res = await API.get(`/qr/${type}/${report._id}`);
+    setQrCodeUrl(res.data.qrCode);
+  } catch (err) {
+    console.error("QR generation error:", err);
+    alert("Failed to generate QR code");
+  }
+};
 
   // ------------------ Voting ------------------
   const voteReport = async () => {
@@ -587,6 +600,41 @@ export default function ReportDetail() {
                   </div>
                 );
               })}
+          </div>
+        </div>
+      )}
+      {/* ---------------- QR Code Section ---------------- */}
+      {report.status !== "Open" && (
+        <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3">
+          <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
+            QR Code for On-Site Verification
+          </h2>
+
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Field officers or citizens can scan this QR code to verify the
+            report’s authenticity and view live updates.
+          </p>
+
+          <div className="flex flex-col items-center space-y-3">
+            <Button
+              onClick={generateQRCode}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              Generate QR Code
+            </Button>
+
+            {qrCodeUrl && (
+              <div className="text-center">
+                <img
+                  src={qrCodeUrl}
+                  alt="Report QR Code"
+                  className="w-48 h-48 mx-auto border rounded-lg shadow-md"
+                />
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                  Scan to view live report details.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}
