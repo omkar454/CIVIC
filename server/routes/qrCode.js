@@ -29,7 +29,7 @@ function renderMedia(mediaArray) {
 router.get("/:type/:id", async (req, res) => {
   try {
     const { type, id } = req.params;
-    const BASE_URL = "http://localhost:5000"; // change to live URL in production
+    const BASE_URL = "https://civic-qr0n.onrender.com/";
     const dataUrl = `${BASE_URL}/api/qr/${type}/${id}/data`;
     const qrDataUrl = await QRCode.toDataURL(dataUrl);
     res.json({ qrCode: qrDataUrl, dataUrl });
