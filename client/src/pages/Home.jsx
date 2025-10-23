@@ -6,6 +6,9 @@ import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import HeatmapLayer from "../components/HeatmapLayer";
 import API from "../services/api.js"
+import AdminAnalytics from "../components/AdminAnalytics.jsx";
+import OfficerAnalytics from "../components/OfficerAnalytics";
+import CitizenAnalytics from "../components/CitizenAnalytics.jsx";
 
 // Recharts
 import {
@@ -580,47 +583,9 @@ useEffect(() => {
           )}
         </div>
       )}
-
-      {/* Latest Reports */}
-      <h3 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200">
-        Latest Reports
-      </h3>
-      <div className="grid md:grid-cols-2 gap-4">
-        {reports.length === 0 ? (
-          <p>No reports yet.</p>
-        ) : (
-          reports.map((r) => (
-            <div
-              key={r._id}
-              className="bg-white dark:bg-gray-800 shadow rounded p-4 hover:shadow-lg transition"
-            >
-              <h4 className="font-bold text-blue-700 dark:text-blue-400 mb-1">
-                {r.title} {r.isTextReport && "(Textual Report)"}
-              </h4>
-              <p className="text-sm text-gray-600 dark:text-gray-300 mb-2">
-                Category: {r.category} | Status: {r.status} | Severity:{" "}
-                {r.severity}
-                {role === "officer" && <> | Department: {userDepartment}</>}
-              </p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-                Reported by: {r.reporter?.name || "Unknown"} (
-                {r.reporter?.email || "N/A"} )
-              </p>
-              {r.isTextReport && (
-                <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
-                  Address: {r.address || "Not provided"}
-                </p>
-              )}
-              <Link
-                to={`/reports/${r._id}`}
-                className="text-blue-600 dark:text-blue-400 hover:underline"
-              >
-                View Details
-              </Link>
-            </div>
-          ))
-        )}
-      </div>
+      {role === "admin" && <AdminAnalytics />}
+      {role === "officer" && <OfficerAnalytics />}
+      {role === "citizen" && <CitizenAnalytics />}
     </div>
   );
 }

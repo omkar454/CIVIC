@@ -15,7 +15,8 @@ import userRoutes from "./routes/user.js";
 import notificationsRoutes from "./routes/notifications.js";
 import adminVerificationRoutes from "./routes/adminVerification.js";
 import transferRoutes from "./routes/transfer.js"; // ✅ Import transfer routes
-
+import officerAnalyticsRoutes from "./routes/officerAnalytics.js";
+import citizenRoutes from "./routes/citizenAnalytics.js";
 
 
 dotenv.config({ path: "./.env" });
@@ -42,6 +43,9 @@ app.use("/api/users", userRoutes);
 app.use("/api/notifications", notificationsRoutes);
 app.use("/api/admin/verification", adminVerificationRoutes); // ✅ New verification route
 app.use("/api/transfer", transferRoutes); // ✅ Register transfer routes
+app.use("/api/officer", officerAnalyticsRoutes);
+app.use("/api/citizen", citizenRoutes);
+
 
 
 // Health check

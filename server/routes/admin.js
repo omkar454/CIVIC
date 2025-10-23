@@ -2,6 +2,7 @@
 import express from "express";
 import User from "../models/User.js";
 import Report from "../models/Report.js";
+import TextAddressReport from "../models/TextAddressReport.js";
 import auth from "../middleware/auth.js";
 
 const router = express.Router();
@@ -18,7 +19,6 @@ router.post("/warn/:userId", auth("admin"), async (req, res) => {
     const user = await User.findById(req.params.userId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
-    // Add warning
     user.warnings = (user.warnings || 0) + 1;
     const warningEntry = {
       reason: reason.trim(),
@@ -27,7 +27,6 @@ router.post("/warn/:userId", auth("admin"), async (req, res) => {
     };
     user.warningLogs.push(warningEntry);
 
-    // Auto-block if 3 or more warnings
     if (user.warnings >= 3 && !user.blocked) {
       user.blocked = true;
       user.blockedLogs.push({
@@ -53,7 +52,6 @@ router.post("/warn/:userId", auth("admin"), async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
 
 // -----------------------------
 // Block / Unblock a user (with reason)
@@ -124,10 +122,16 @@ router.get("/users", auth("admin"), async (req, res) => {
 router.get("/export/reports", auth("admin"), async (req, res) => {
   try {
     const reports = await Report.find().populate("reporter", "name email role");
+    const textReports = await TextAddressReport.find().populate(
+      "reporter",
+      "name email role"
+    );
+
+    const allReports = [...reports, ...textReports];
 
     if (req.query.format === "csv") {
       const csvHeader = "id,title,category,status,reporter\n";
-      const csvRows = reports
+      const csvRows = allReports
         .map(
           (r) =>
             `${r._id},${r.title},${r.category},${r.status},${
@@ -141,7 +145,7 @@ router.get("/export/reports", auth("admin"), async (req, res) => {
       return res.send(csvHeader + csvRows);
     }
 
-    res.json({ count: reports.length, reports });
+    res.json({ count: allReports.length, reports: allReports });
   } catch (err) {
     console.error("Export reports error:", err);
     res.status(500).json({ message: "Server error" });
@@ -149,47 +153,210 @@ router.get("/export/reports", auth("admin"), async (req, res) => {
 });
 
 // -----------------------------
-// Admin analytics
+// Admin analytics / department insights
 // -----------------------------
 router.get("/analytics", auth("admin"), async (req, res) => {
   try {
-    const byCategory = await Report.aggregate([
-      { $group: { _id: "$category", count: { $sum: 1 } } },
-      { $project: { category: "$_id", count: 1, _id: 0 } },
-    ]);
+    const reports = await Report.find();
+    const textReports = await TextAddressReport.find();
+    const allReports = [...reports, ...textReports];
 
-    const byStatus = await Report.aggregate([
-      { $group: { _id: "$status", count: { $sum: 1 } } },
-      { $project: { status: "$_id", count: 1, _id: 0 } },
-    ]);
-
-    const resolutionTrendAgg = await Report.aggregate([
-      {
-        $group: {
-          _id: {
-            date: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
-            status: "$status",
-          },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { "_id.date": 1 } },
-    ]);
-
-    const trendMap = {};
-    resolutionTrendAgg.forEach((t) => {
-      const date = t._id.date;
-      const status = t._id.status;
-      if (!trendMap[date]) trendMap[date] = { date };
-      trendMap[date][status] = t.count;
+    // By category
+    const byCategory = [];
+    const categoryMap = {};
+    allReports.forEach((r) => {
+      categoryMap[r.category] = (categoryMap[r.category] || 0) + 1;
     });
+    for (const key in categoryMap) {
+      byCategory.push({ category: key, count: categoryMap[key] });
+    }
 
+    // By status
+    const byStatus = [];
+    const statusMap = {};
+    allReports.forEach((r) => {
+      statusMap[r.status] = (statusMap[r.status] || 0) + 1;
+    });
+    for (const key in statusMap) {
+      byStatus.push({ status: key, count: statusMap[key] });
+    }
+
+    // Resolution trend per day
+    const trendMap = {};
+    allReports.forEach((r) => {
+      const date = r.createdAt.toISOString().split("T")[0];
+      if (!trendMap[date]) trendMap[date] = { date };
+      trendMap[date][r.status] = (trendMap[date][r.status] || 0) + 1;
+    });
     const resolutionTrend = Object.values(trendMap);
 
     res.json({ byCategory, byStatus, resolutionTrend });
   } catch (err) {
     console.error("Analytics fetch error:", err);
     res.status(500).json({ message: "Failed to fetch analytics" });
+  }
+});
+
+// -----------------------------
+// Department insights (fixed)
+// -----------------------------
+router.get("/department-insights", auth("admin"), async (req, res) => {
+  try {
+    // Fetch both geocoded and text reports
+    const reports = await Report.find();
+    const textReports = await TextAddressReport.find();
+
+    // Merge all reports into one array
+    const allReports = [
+      ...reports.map(r => r.toObject()),
+      ...textReports.map(r => r.toObject())
+    ];
+
+    const departmentMap = {};
+
+    allReports.forEach((r) => {
+      // Normalize department: trim spaces, default to "general" if missing
+      const deptRaw = r.department?.trim();
+      const dept = deptRaw && deptRaw.length > 0 ? deptRaw : "general";
+
+      if (!departmentMap[dept]) {
+        departmentMap[dept] = {
+          department: dept,
+          totalReports: 0,
+          resolved: 0,
+          rejected: 0,
+          resolutionTimeSum: 0,
+        };
+      }
+
+      departmentMap[dept].totalReports += 1;
+
+      if (r.status === "Resolved") {
+        departmentMap[dept].resolved += 1;
+        if (r.resolvedAt) {
+          // Resolution time in days
+          departmentMap[dept].resolutionTimeSum +=
+            (new Date(r.resolvedAt) - new Date(r.createdAt)) /
+            (1000 * 60 * 60 * 24);
+        }
+      }
+
+      if (r.status === "Rejected") {
+        departmentMap[dept].rejected += 1;
+      }
+    });
+
+    // Convert map to array and calculate efficiency / average resolution
+    const departments = Object.values(departmentMap).map(d => ({
+      ...d,
+      efficiencyPct: d.totalReports ? (d.resolved / d.totalReports) * 100 : 0,
+      avgResolutionDays: d.resolved ? d.resolutionTimeSum / d.resolved : 0,
+    }));
+
+    // Optional: log to debug
+    console.log("Department Insights:", departments);
+
+    res.json({ departments });
+  } catch (err) {
+    console.error("Department insights error:", err);
+    res.status(500).json({ message: "Failed to fetch department insights" });
+  }
+});
+
+
+// -----------------------------
+// Department trends (monthly)
+// -----------------------------
+router.get("/department-trends", auth("admin"), async (req, res) => {
+  try {
+    const months = parseInt(req.query.months) || 6;
+    const startDate = new Date();
+    startDate.setMonth(startDate.getMonth() - months + 1);
+    startDate.setDate(1);
+    startDate.setHours(0, 0, 0, 0);
+
+    const reports = await Report.find({ createdAt: { $gte: startDate } });
+    const textReports = await TextAddressReport.find({
+      createdAt: { $gte: startDate },
+    });
+    const allReports = [...reports, ...textReports];
+
+    const trendMap = {};
+    allReports.forEach((r) => {
+      const month = r.createdAt.toISOString().slice(0, 7);
+      const dept = r.department || "general";
+      if (!trendMap[month]) trendMap[month] = { month };
+      trendMap[month][dept] = (trendMap[month][dept] || 0) + 1;
+    });
+
+    res.json({ trends: Object.values(trendMap) });
+  } catch (err) {
+    console.error("Department trends error:", err);
+    res.status(500).json({ message: "Failed to fetch department trends" });
+  }
+});
+
+// -----------------------------
+// Monthly / Quarterly performance summary
+// -----------------------------
+router.get("/performance-summary", auth("admin"), async (req, res) => {
+  try {
+    const { period = "month", year, month, quarter } = req.query;
+    let startDate, endDate;
+
+    if (period === "month" && year && month) {
+      startDate = new Date(year, month - 1, 1);
+      endDate = new Date(year, month, 0, 23, 59, 59, 999);
+    } else if (period === "quarter" && year && quarter) {
+      const startMonth = (quarter - 1) * 3;
+      startDate = new Date(year, startMonth, 1);
+      endDate = new Date(year, startMonth + 3, 0, 23, 59, 59, 999);
+    } else {
+      return res.status(400).json({ message: "Invalid period parameters" });
+    }
+
+    const reports = await Report.find({
+      createdAt: { $gte: startDate, $lte: endDate },
+    });
+    const textReports = await TextAddressReport.find({
+      createdAt: { $gte: startDate, $lte: endDate },
+    });
+    const allReports = [...reports, ...textReports];
+
+    const departmentMap = {};
+    allReports.forEach((r) => {
+      const dept = r.department || "general";
+      if (!departmentMap[dept]) {
+        departmentMap[dept] = {
+          department: dept,
+          total: 0,
+          resolved: 0,
+          rejected: 0,
+          resolutionTimeSum: 0,
+        };
+      }
+      departmentMap[dept].total += 1;
+      if (r.status === "Resolved") {
+        departmentMap[dept].resolved += 1;
+        if (r.resolvedAt) {
+          departmentMap[dept].resolutionTimeSum +=
+            (new Date(r.resolvedAt) - new Date(r.createdAt)) /
+            (1000 * 60 * 60 * 24);
+        }
+      }
+      if (r.status === "Rejected") departmentMap[dept].rejected += 1;
+    });
+
+    const summary = Object.values(departmentMap).map((d) => ({
+      ...d,
+      efficiencyPct: d.total ? (d.resolved / d.total) * 100 : 0,
+      avgResolutionDays: d.resolved ? d.resolutionTimeSum / d.resolved : 0,
+    }));
+
+    res.json({ summary });
+  } catch (err) {
+    console.error("Performance summary error:", err);
+    res.status(500).json({ message: "Failed to fetch performance summary" });
   }
 });
 
@@ -202,19 +369,20 @@ router.post("/verify-report/:id", auth("admin"), async (req, res) => {
     if (approve === undefined)
       return res.status(400).json({ message: "Approval decision required" });
 
-    const report =
-      (await Report.findById(req.params.id)) ||
-      (await TextAddressReport.findById(req.params.id));
-
+    let report = await Report.findById(req.params.id);
+    if (!report) report = await TextAddressReport.findById(req.params.id);
     if (!report) return res.status(404).json({ message: "Report not found" });
 
-    if (!["Resolved (Pending Admin Approval)", "Rejected (Pending Admin Approval)"].includes(report.status)) {
+    const pendingStatuses = [
+      "Resolved (Pending Admin Approval)",
+      "Rejected (Pending Admin Approval)",
+    ];
+    if (!pendingStatuses.includes(report.status)) {
       return res.status(400).json({
         message: "Report status not eligible for admin verification",
       });
     }
 
-    // Update admin verification
     report.adminVerification.verified = approve;
     report.adminVerification.note = note || "";
     report.adminVerification.verifiedAt = new Date();
@@ -226,7 +394,6 @@ router.post("/verify-report/:id", auth("admin"), async (req, res) => {
     });
 
     if (approve) {
-      // ✅ If approved → finalize actual status
       report.status = report.status.includes("Resolved")
         ? "Resolved"
         : "Rejected";
@@ -237,7 +404,6 @@ router.post("/verify-report/:id", auth("admin"), async (req, res) => {
         at: new Date(),
       });
     } else {
-      // ❌ If rejected → mark rejected by admin
       report.status = "Rejected (by Admin)";
       report.assignedTo = null;
       report.statusHistory.push({
@@ -261,7 +427,5 @@ router.post("/verify-report/:id", auth("admin"), async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
-
 
 export default router;
