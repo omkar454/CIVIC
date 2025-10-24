@@ -40,19 +40,19 @@ export default function AdminTransferVerification() {
   const fetchPendingTransfers = async () => {
     setLoading(true);
     try {
-      // Fetch all transfers from backend
       const res = await API.get("/transfer");
       const allTransfers = res.data || [];
 
-      // Filter pending transfers only
       const pendingTransfers = allTransfers.filter(
         (t) => t.adminVerification?.status === "pending"
       );
 
-      // Add reverse geocode for reports with coordinates
+      // Add reverse geocode & coordinates
       const withAddress = await Promise.all(
         pendingTransfers.map(async (t) => {
           const report = t.report || {};
+
+          // Handle coordinates + reverse geocode
           if (report.location?.coordinates?.length === 2) {
             const [lng, lat] = report.location.coordinates;
             try {
@@ -60,12 +60,13 @@ export default function AdminTransferVerification() {
                 `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
               );
               report.address = geoRes.data.display_name || "";
-              report.lat = lat;
-              report.lng = lng;
             } catch {
               report.address = "";
             }
+            report.lat = lat;
+            report.lng = lng;
           }
+
           return t;
         })
       );
@@ -100,7 +101,6 @@ export default function AdminTransferVerification() {
 
       alert(`Transfer request ${isApproved ? "approved" : "rejected"}!`);
 
-      // Update local state to reflect department & category changes immediately
       setTransfers((prev) =>
         prev.map((t) => {
           if (t._id === transferId && isApproved) {
@@ -118,7 +118,6 @@ export default function AdminTransferVerification() {
         })
       );
 
-      // Optionally, clear admin note for this transfer
       setAdminNotes((prev) => ({ ...prev, [transferId]: "" }));
     } catch (err) {
       console.error("Transfer verification error:", err);
@@ -167,10 +166,12 @@ export default function AdminTransferVerification() {
                 </Badge>
               </div>
 
+              {/* Description */}
               <p className="text-gray-700 dark:text-gray-300">
                 {report.description || "No description provided."}
               </p>
 
+              {/* Transfer Info */}
               <p className="text-sm text-gray-500 dark:text-gray-400">
                 Current Department:{" "}
                 <strong>{t.oldDepartment || "Unknown"}</strong> → Requested
@@ -185,7 +186,36 @@ export default function AdminTransferVerification() {
                 Transfer Reason: {t.reason || "Not specified"}
               </p>
 
-              {/* Map Section */}
+              {/* Citizen Submitted Media */}
+              {report.media?.length > 0 && (
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-2">
+                    Citizen Submitted Media
+                  </h3>
+                  <div className="flex flex-wrap gap-3">
+                    {report.media.map((m, i) =>
+                      m.mime?.startsWith("image/") ? (
+                        <img
+                          key={i}
+                          src={m.url}
+                          alt="media"
+                          className="w-44 h-44 object-cover rounded border cursor-pointer hover:scale-105 transition"
+                          onClick={() => window.open(m.url, "_blank")}
+                        />
+                      ) : (
+                        <video
+                          key={i}
+                          src={m.url}
+                          controls
+                          className="w-56 h-44 object-cover rounded border cursor-pointer hover:scale-105 transition"
+                        />
+                      )
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Map & Coordinates */}
               {report.lat && report.lng && (
                 <div className="rounded-xl overflow-hidden shadow">
                   <MapContainer
@@ -200,11 +230,17 @@ export default function AdminTransferVerification() {
                         <p>Category: {report.category}</p>
                         <p>Department: {report.department}</p>
                         {report.address && <p>Address: {report.address}</p>}
+                        <p>
+                          Coordinates: {report.lat.toFixed(6)},{" "}
+                          {report.lng.toFixed(6)}
+                        </p>
                       </Popup>
                     </Marker>
                   </MapContainer>
                   <div className="p-2 text-sm text-gray-600 dark:text-gray-400 border-t">
-                    Address: {report.address || "N/A"}
+                    Address: {report.address || "N/A"} <br />
+                    Coordinates: {report.lat.toFixed(6)},{" "}
+                    {report.lng.toFixed(6)}
                   </div>
                 </div>
               )}

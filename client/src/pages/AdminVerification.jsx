@@ -31,7 +31,6 @@ export default function AdminVerification() {
       const res = await API.get("/admin/verification/pending");
       const data = res.data || [];
 
-      // Reverse geocode for each report
       const withAddress = await Promise.all(
         data.map(async (r) => {
           if (r.location?.coordinates?.length === 2) {
@@ -45,7 +44,13 @@ export default function AdminVerification() {
               r.lng = lng;
             } catch {
               r.address = "";
+              r.lat = lat;
+              r.lng = lng;
             }
+          } else {
+            // Text-based report
+            r.lat = null;
+            r.lng = null;
           }
           return r;
         })
@@ -87,7 +92,6 @@ export default function AdminVerification() {
         severity: isApproved ? Number(severity) : undefined,
       });
 
-      // Reset form state for this report
       setSelectedSeverity((prev) => {
         const copy = { ...prev };
         delete copy[reportId];
@@ -200,7 +204,7 @@ export default function AdminVerification() {
               </div>
             )}
 
-            {/* Map Section */}
+            {/* Map & Coordinates Section */}
             {report.lat && report.lng && (
               <div className="rounded-xl overflow-hidden shadow">
                 <MapContainer
@@ -216,11 +220,16 @@ export default function AdminVerification() {
                       <p>Department: {report.department}</p>
                       <p>Reported by: {report.reporter?.name}</p>
                       {report.address && <p>Address: {report.address}</p>}
+                      <p>
+                        Coordinates: {report.lat.toFixed(6)},{" "}
+                        {report.lng.toFixed(6)}
+                      </p>
                     </Popup>
                   </Marker>
                 </MapContainer>
                 <div className="p-2 text-sm text-gray-600 dark:text-gray-400 border-t">
-                  Address: {report.address || "N/A"}
+                  Address: {report.address || "N/A"} <br />
+                  Coordinates: {report.lat.toFixed(6)}, {report.lng.toFixed(6)}
                 </div>
               </div>
             )}
@@ -256,7 +265,6 @@ export default function AdminVerification() {
 
             {/* Severity and Admin Note */}
             <div className="space-y-3 mt-3">
-              {/** Severity only relevant when approving */}
               <div>
                 <label className="font-medium mr-2">Verification Note:</label>
                 <textarea
@@ -273,7 +281,7 @@ export default function AdminVerification() {
                 />
               </div>
 
-              {/** Buttons */}
+              {/* Buttons */}
               <div className="flex gap-3 pt-2">
                 <Button
                   className="bg-green-600 hover:bg-green-700 text-white"
@@ -293,7 +301,6 @@ export default function AdminVerification() {
                 </Button>
               </div>
 
-              {/** Show severity dropdown only if Approve is clicked (optional enhancement) */}
               <div className="mt-2">
                 <label className="font-medium mr-2">Severity (1–5):</label>
                 <select

@@ -6,6 +6,7 @@ import Report from "../models/Report.js";
 import TextAddressReport from "../models/TextAddressReport.js";
 import User from "../models/User.js";
 import Notification from "../models/Notification.js";
+import fetch from "node-fetch"; // for reverse geocoding
 
 const router = express.Router();
 
@@ -37,7 +38,6 @@ const categoryToDept = {
   other: "general",
 };
 
-// Reverse mapping for department → default category
 const deptToCategory = {
   road: "pothole",
   sanitation: "garbage",
@@ -215,7 +215,7 @@ router.post("/:transferId/verify", auth("admin"), async (req, res) => {
 });
 
 /* ------------------------------------------------------------
-   📜 ADMIN / OFFICER: View Transfer Logs
+   🧑‍💼 ADMIN / OFFICER: View Transfer Logs (with coordinates & address)
 ------------------------------------------------------------ */
 router.get("/", auth(["admin", "officer"]), async (req, res) => {
   try {
@@ -223,12 +223,41 @@ router.get("/", auth(["admin", "officer"]), async (req, res) => {
     if (req.user.role === "officer") filter.requestedBy = req.user.id;
 
     const transfers = await TransferLog.find(filter)
-      .populate("report", "title category department")
-      .populate("requestedBy", "name department")
+      .populate("report")
+      .populate("requestedBy", "name department email")
       .populate("adminVerification.verifiedBy", "name")
       .sort({ createdAt: -1 });
 
-    res.json(transfers);
+    // Enhance each report with coordinates and reverse-geocoded address
+    const enhancedTransfers = await Promise.all(
+      transfers.map(async (t) => {
+        const report = t.report;
+
+        if (report?.location?.coordinates?.length === 2) {
+          const [lng, lat] = report.location.coordinates;
+          t.report.lat = lat;
+          t.report.lng = lng;
+
+          // Only reverse-geocode if address is empty
+          if (!report.address || report.address.trim() === "") {
+            try {
+              const geoRes = await fetch(
+                `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+              );
+              const geoData = await geoRes.json();
+              t.report.address = geoData.display_name || "";
+            } catch (err) {
+              console.error("Reverse geocode failed:", err.message);
+              t.report.address = "";
+            }
+          }
+        }
+
+        return t;
+      })
+    );
+
+    res.json(enhancedTransfers);
   } catch (err) {
     console.error("Fetch transfer logs error:", err);
     res.status(500).json({ message: "Server error" });

@@ -1,9 +1,11 @@
 // routes/adminVerification.js
 import express from "express";
 import Report from "../models/Report.js";
+import TextAddressReport from "../models/TextAddressReport.js";
 import Notification from "../models/Notification.js";
 import User from "../models/User.js";
 import auth from "../middleware/auth.js";
+import fetch from "node-fetch";
 
 const router = express.Router();
 
@@ -11,8 +13,8 @@ const router = express.Router();
    🧩 Helper: Simplified notification creator
 -------------------------------------------------------------------*/
 async function createNotification(userId, message) {
+  if (!userId || !message) return;
   try {
-    if (!userId || !message) return;
     await Notification.create({ user: userId, message });
   } catch (err) {
     console.error("❌ Notification error:", err.message);
@@ -68,10 +70,9 @@ router.post("/:id/verify", auth("admin"), async (req, res) => {
       }
 
       report.severity = severity;
-      report.status = "Acknowledged"; // ✅ for officer queue
+      report.status = "Acknowledged";
       report.priorityScore = severity * 10 + report.votes * 5;
 
-      // 🔹 Add to status history
       report.statusHistory.push({
         status: "Acknowledged",
         by: req.user._id,
@@ -79,14 +80,13 @@ router.post("/:id/verify", auth("admin"), async (req, res) => {
         at: new Date(),
       });
 
-      // 🔔 Notify the citizen
+      // Notify citizen
       await createNotification(
         report.reporter._id,
         `✅ Your report "${report.title}" has been verified by admin (Severity: ${severity}) and forwarded for resolution.`
       );
 
-      // 🔔 Notify officers (department queue)
-      // officers with matching department can see this new verified report
+      // Notify officers in same department
       const officers = await User.find({
         role: "officer",
         department: report.department,
@@ -99,7 +99,7 @@ router.post("/:id/verify", auth("admin"), async (req, res) => {
         );
       }
     } else {
-      // ❌ Admin rejected citizen report
+      // Admin rejected
       report.status = "Open";
       verification.verified = false;
 
@@ -110,7 +110,6 @@ router.post("/:id/verify", auth("admin"), async (req, res) => {
         at: new Date(),
       });
 
-      // 🔔 Notify the citizen
       await createNotification(
         report.reporter._id,
         `❌ Your report "${report.title}" was rejected by admin. Reason: ${
@@ -133,29 +132,77 @@ router.post("/:id/verify", auth("admin"), async (req, res) => {
   }
 });
 
-
-
 /* ------------------------------------------------------------------
    📋 FETCH Pending Citizen Reports for Admin
-   - Only reports with citizenAdminVerification.verified === null
+   - Text/manual reports → address only
+   - Geo reports → lat, lng + reverse geocoded address
 -------------------------------------------------------------------*/
 router.get("/pending", auth("admin"), async (req, res) => {
   try {
-    const pendingReports = await Report.find({
+    // 1️⃣ Geo reports
+    const geoReports = await Report.find({
       $or: [
         { "citizenAdminVerification.verified": null },
         { citizenAdminVerification: { $exists: false } },
       ],
     })
       .populate("reporter", "name email role")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
-    res.json(pendingReports);
+    const geoReportsWithAddress = await Promise.all(
+      geoReports.map(async (r) => {
+        if (r.location?.coordinates?.length === 2) {
+          const [lng, lat] = r.location.coordinates;
+          r.lat = lat;
+          r.lng = lng;
+          try {
+            const geoRes = await fetch(
+              `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
+            );
+            const geoData = await geoRes.json();
+            r.address = geoData.display_name || "";
+          } catch {
+            r.address = "";
+          }
+        }
+        return r;
+      })
+    );
+
+    // 2️⃣ Text/manual reports
+    const textReports = await TextAddressReport.find({
+      $or: [
+        { "citizenAdminVerification.verified": null },
+        { citizenAdminVerification: { $exists: false } },
+      ],
+    })
+      .populate("reporter", "name email role")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const textReportsProcessed = textReports.map((r) => ({
+      ...r,
+      lat: null,
+      lng: null,
+      address: r.address || "",
+      isTextReport: true,
+    }));
+
+    // 3️⃣ Combine all
+    const allReports = [
+      ...geoReportsWithAddress.map((r) => ({ ...r, isTextReport: false })),
+      ...textReportsProcessed,
+    ];
+
+    // Sort descending by creation date
+    allReports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    res.json(allReports);
   } catch (err) {
-    console.error("Fetch pending citizen reports error:", err);
+    console.error("Fetch pending reports error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
-
 
 export default router;
