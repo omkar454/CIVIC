@@ -2,9 +2,22 @@
 import express from "express";
 import Report from "../models/Report.js";
 import Notification from "../models/Notification.js";
+import User from "../models/User.js";
 import auth from "../middleware/auth.js";
 
 const router = express.Router();
+
+/* ------------------------------------------------------------------
+   🧩 Helper: Simplified notification creator
+-------------------------------------------------------------------*/
+async function createNotification(userId, message) {
+  try {
+    if (!userId || !message) return;
+    await Notification.create({ user: userId, message });
+  } catch (err) {
+    console.error("❌ Notification error:", err.message);
+  }
+}
 
 /* ------------------------------------------------------------------
    🧾 ADMIN VERIFICATION FOR CITIZEN REPORTS
@@ -55,10 +68,10 @@ router.post("/:id/verify", auth("admin"), async (req, res) => {
       }
 
       report.severity = severity;
-      report.status = "Acknowledged"; // for officer queue
+      report.status = "Acknowledged"; // ✅ for officer queue
       report.priorityScore = severity * 10 + report.votes * 5;
 
-      // 🔹 Add to status history timeline
+      // 🔹 Add to status history
       report.statusHistory.push({
         status: "Acknowledged",
         by: req.user._id,
@@ -66,10 +79,25 @@ router.post("/:id/verify", auth("admin"), async (req, res) => {
         at: new Date(),
       });
 
-      await Notification.create({
-        user: report.reporter._id,
-        message: `✅ Your report "${report.title}" has been verified and forwarded for action.`,
-      });
+      // 🔔 Notify the citizen
+      await createNotification(
+        report.reporter._id,
+        `✅ Your report "${report.title}" has been verified by admin (Severity: ${severity}) and forwarded for resolution.`
+      );
+
+      // 🔔 Notify officers (department queue)
+      // officers with matching department can see this new verified report
+      const officers = await User.find({
+        role: "officer",
+        department: report.department,
+      }).select("_id");
+
+      for (const o of officers) {
+        await createNotification(
+          o._id,
+          `📋 New verified report "${report.title}" has been added to your department queue.`
+        );
+      }
     } else {
       // ❌ Admin rejected citizen report
       report.status = "Open";
@@ -82,12 +110,13 @@ router.post("/:id/verify", auth("admin"), async (req, res) => {
         at: new Date(),
       });
 
-      await Notification.create({
-        user: report.reporter._id,
-        message: `❌ Your report "${report.title}" was rejected. Reason: ${
+      // 🔔 Notify the citizen
+      await createNotification(
+        report.reporter._id,
+        `❌ Your report "${report.title}" was rejected by admin. Reason: ${
           note || "No note provided"
-        }`,
-      });
+        }`
+      );
     }
 
     await report.save();
@@ -103,6 +132,7 @@ router.post("/:id/verify", auth("admin"), async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 
 /* ------------------------------------------------------------------
@@ -126,5 +156,6 @@ router.get("/pending", auth("admin"), async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 export default router;

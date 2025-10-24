@@ -22,7 +22,6 @@ const categoryToDept = {
   "water-supply": "water-supply",
   drainage: "drainage",
   "waste-management": "waste-management",
-  
   park: "park",
   other: "general",
 };
@@ -54,85 +53,93 @@ async function geocodeAddress(address) {
     console.error("Geocoding error:", err);
     return null;
   }
-  }
+}
 
-  /* ------------------------------------------------------------------
-     🚨 SLA & Auto Escalation Route
-  -------------------------------------------------------------------*/
-  router.get("/check-sla", auth("admin"), async (req, res) => {
-    try {
-      const now = new Date();
-  
-      // Fetch active reports (both geocoded and text)
-      const reports = await Report.find({
-        status: { $in: ["Open", "Acknowledged", "In Progress"] },
-        escalated: { $ne: true },
-      }).populate("assignedTo", "name email role department");
-  
-      const escalatedReports = [];
-  
-      for (const r of reports) {
-        // SLA days based on priority score
-        let slaDays = 5;
-        if (r.priorityScore > 30) slaDays = 2;
-        else if (r.priorityScore > 20) slaDays = 3;
-        else if (r.priorityScore > 10) slaDays = 4;
-  
-        const createdAt = new Date(r.createdAt);
-        const deadline = new Date(createdAt);
-        deadline.setDate(deadline.getDate() + slaDays);
-  
-        if (now > deadline) {
-          // 🚨 Overdue → Mark as escalated and notify
-          r.escalated = true;
-          r.escalationDetails = {
-            overdueBy: Math.floor((now - deadline) / (1000 * 60 * 60 * 24)),
-            checkedAt: now,
-            slaDays,
-          };
-          await r.save();
-  
-          // Notify assigned officer (if exists)
-          if (r.assignedTo) {
-            await Notification.create({
-              user: r.assignedTo._id,
-              message: `⚠️ Report "${r.title}" is overdue by ${r.escalationDetails.overdueBy} day(s). Please take action immediately.`,
-            });
-          }
-  
-          // Notify admin(s)
-          const admins = await User.find({ role: "admin" });
-          const adminNotifs = admins.map((a) => ({
-            user: a._id,
-            message: `🚨 Report "${r.title}" (Dept: ${r.department}) breached SLA. Officer: ${
-              r.assignedTo?.name || "Unassigned"
-            }.`,
-          }));
-          await Notification.insertMany(adminNotifs);
-  
-          escalatedReports.push({
-            id: r._id,
-            title: r.title,
-            department: r.department,
-            officer: r.assignedTo?.name,
-            overdueBy: r.escalationDetails.overdueBy,
-            slaDays,
+/* ------------------------------------------------------------------
+   🚨 SLA & Auto Escalation Route (Modified for TextAddressReport)
+-------------------------------------------------------------------*/
+router.get("/check-sla", auth("admin"), async (req, res) => {
+  try {
+    const now = new Date();
+
+    // Fetch all active geocoded reports
+    const geoReports = await Report.find({
+      status: { $in: ["Open", "Acknowledged", "In Progress"] },
+      escalated: { $ne: true },
+    }).populate("assignedTo", "name email role department");
+
+    // Fetch all active text address reports
+    const textReports = await TextAddressReport.find({
+      status: { $in: ["Open", "Acknowledged", "In Progress"] },
+      escalated: { $ne: true },
+    }).populate("assignedTo", "name email role department");
+
+    // Combine both types
+    const allReports = [...geoReports, ...textReports];
+
+    const escalatedReports = [];
+
+    for (const r of allReports) {
+      let slaDays = 5;
+      if (r.priorityScore > 30) slaDays = 2;
+      else if (r.priorityScore > 20) slaDays = 3;
+      else if (r.priorityScore > 10) slaDays = 4;
+
+      const createdAt = new Date(r.createdAt);
+      const deadline = new Date(createdAt);
+      deadline.setDate(deadline.getDate() + slaDays);
+
+      if (now > deadline) {
+        r.escalated = true;
+        r.escalationDetails = {
+          overdueBy: Math.floor((now - deadline) / (1000 * 60 * 60 * 24)),
+          checkedAt: now,
+          slaDays,
+        };
+        await r.save();
+
+        // Notify assigned officer
+        if (r.assignedTo) {
+          await Notification.create({
+            user: r.assignedTo._id,
+            message: `⚠️ Report "${r.title}" is overdue by ${r.escalationDetails.overdueBy} day(s).`,
           });
         }
-      }
-  
-      res.json({
-        message: "SLA check completed",
-        escalatedCount: escalatedReports.length,
-        escalatedReports,
-      });
-    } catch (err) {
-      console.error("SLA check error:", err);
-      res.status(500).json({ message: "Server error" });
-    }
-  });
 
-  /* ------------------------------------------------------------
+        // Notify all admins
+        const admins = await User.find({ role: "admin" });
+        const adminNotifs = admins.map((a) => ({
+          user: a._id,
+          message: `🚨 Report "${r.title}" (Dept: ${
+            r.department
+          }) breached SLA. Officer: ${r.assignedTo?.name || "Unassigned"}.`,
+        }));
+        await Notification.insertMany(adminNotifs);
+
+        escalatedReports.push({
+          id: r._id,
+          title: r.title,
+          department: r.department,
+          officer: r.assignedTo?.name,
+          overdueBy: r.escalationDetails.overdueBy,
+          slaDays,
+        });
+      }
+    }
+
+    res.json({
+      message: "SLA check completed",
+      escalatedCount: escalatedReports.length,
+      escalatedReports,
+    });
+  } catch (err) {
+    console.error("SLA check error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
+/* ------------------------------------------------------------
    📝 Create Report
 ------------------------------------------------------------ */
 router.post("/", auth("citizen"), async (req, res) => {
@@ -148,16 +155,13 @@ router.post("/", auth("citizen"), async (req, res) => {
       questionToOfficer = "",
     } = req.body;
 
-    if (!title || !description || !category) {
+    if (!title || !description || !category)
       return res.status(400).json({ message: "Missing required fields" });
-    }
 
     const department = mapCategoryToDepartment(category);
     let coordinates = location?.coordinates;
 
-    /* ------------------------------------------------------------
-       CASE 1️⃣: Manual Address Report (Text Only)
-    ------------------------------------------------------------ */
+    // Case 1: Text-only manual address
     if (address && (!coordinates || coordinates.length !== 2)) {
       const textReport = await TextAddressReport.create({
         title,
@@ -171,7 +175,6 @@ router.post("/", auth("citizen"), async (req, res) => {
         questionToOfficer: questionToOfficer.trim() || "",
       });
 
-      // Optional: Add officer question as a comment
       if (questionToOfficer.trim()) {
         textReport.comments.push({
           message: questionToOfficer.trim(),
@@ -180,38 +183,35 @@ router.post("/", auth("citizen"), async (req, res) => {
         await textReport.save();
       }
 
-      // Notify relevant officers
       const officers = await User.find({ role: "officer", department });
       if (officers.length) {
         const notifications = officers.map((o) => ({
           user: o._id,
-          message: `📝 New ${category} report with manual address submitted to your department.`,
+          message: `📝 New ${category} report with manual address submitted.`,
         }));
         await Notification.insertMany(notifications);
       }
 
-      return res.status(201).json({
-        message: "Manual address report submitted successfully",
-        report: textReport,
-      });
+      return res
+        .status(201)
+        .json({
+          message: "Manual address report submitted",
+          report: textReport,
+        });
     }
 
-    /* ------------------------------------------------------------
-    CASE 2️⃣: Geocoded Report (with coordinates)
-    ------------------------------------------------------------ */
+    // Case 2: Geocoded report
     if ((!coordinates || coordinates.length !== 2) && address) {
       const geo = await geocodeAddress(address);
       if (geo) coordinates = geo;
     }
 
-    if (!coordinates || coordinates.length !== 2) {
-      return res.status(400).json({
-        message:
-        "Valid coordinates or address required to create a geocoded report.",
-      });
-    }
+    if (!coordinates || coordinates.length !== 2)
+      return res
+        .status(400)
+        .json({ message: "Valid coordinates or address required." });
 
-    const reportData = {
+    const report = await Report.create({
       title,
       description,
       category,
@@ -220,15 +220,10 @@ router.post("/", auth("citizen"), async (req, res) => {
       reporter: req.user.id,
       address: address.trim(),
       media,
-      location: {
-        type: "Point",
-        coordinates: coordinates.map(Number),
-      },
+      location: { type: "Point", coordinates: coordinates.map(Number) },
       priorityScore: calculatePriority(severity, 0),
-    };
-    
-    const report = await Report.create(reportData);
-    
+    });
+
     if (questionToOfficer.trim()) {
       report.comments.push({
         message: questionToOfficer.trim(),
@@ -236,7 +231,7 @@ router.post("/", auth("citizen"), async (req, res) => {
       });
       await report.save();
     }
-    
+
     const officers = await User.find({ role: "officer", department });
     if (officers.length) {
       const notifications = officers.map((o) => ({
@@ -246,15 +241,109 @@ router.post("/", auth("citizen"), async (req, res) => {
       await Notification.insertMany(notifications);
     }
 
-    res.status(201).json({
-      message: "Geocoded report submitted successfully",
-      report,
-    });
+    res.status(201).json({ message: "Geocoded report submitted", report });
   } catch (err) {
     console.error("Create report error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });
+
+
+/* ------------------------------------------------------------
+   🛠️ Update Report Status (Officer/Admin)
+------------------------------------------------------------ */
+router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
+  try {
+    const { status, comment, media } = req.body;
+    const user = req.user;
+
+    const report = await Report.findById(req.params.id)
+      .populate("reporter")
+      .populate("assignedTo");
+
+    if (!report) return res.status(404).json({ message: "Report not found" });
+
+    // -----------------------------------------
+    // ✅ Upload media (if any) to Cloudinary
+    // -----------------------------------------
+    let formattedMedia = [];
+
+    if (Array.isArray(media) && media.length > 0) {
+      formattedMedia = media.map((file) => ({
+        url: file.url,
+        mime: file.mime || "image/jpeg",
+        uploadedBy: user.role, // 'officer' or 'admin'
+        uploadedAt: new Date(),
+      }));
+    }
+
+    // -----------------------------------------
+    // ✅ Push new status history
+    // -----------------------------------------
+    report.statusHistory.push({
+      status,
+      comment,
+      updatedBy: user.id,
+      media: formattedMedia,
+    });
+
+    // -----------------------------------------
+    // ✅ Handle officer updates
+    // -----------------------------------------
+    if (user.role === "officer") {
+      if (status === "In Progress") {
+        report.status = "In Progress";
+      } else if (status === "Resolved" || status === "Rejected") {
+        report.status = "Pending Verification"; // send to admin for approval
+      }
+
+      // Notify admins
+      const admins = await User.find({ role: "admin" });
+      if (admins.length) {
+        const adminNotifications = admins.map((a) => ({
+          user: a._id,
+          message: `📋 Report "${report.title}" marked as ${status} by officer. Awaiting your verification.`,
+        }));
+        await Notification.insertMany(adminNotifications);
+      }
+    }
+
+    // -----------------------------------------
+    // ✅ Handle admin verification updates
+    // -----------------------------------------
+    if (user.role === "admin") {
+      if (status === "Verified - Resolved") {
+        report.status = "Resolved";
+      } else if (status === "Verified - Rejected") {
+        report.status = "Rejected";
+      } else {
+        return res.status(400).json({ message: "Invalid admin status value" });
+      }
+
+      // Notify the citizen
+      const citizenNotification = new Notification({
+        user: report.reporter._id,
+        message: `✅ Your report "${report.title}" has been ${report.status.toLowerCase()} by admin.`,
+      });
+      await citizenNotification.save();
+    }
+
+    // -----------------------------------------
+    // ✅ Save and respond
+    // -----------------------------------------
+    await report.save();
+
+    res.status(200).json({
+      message: `Status updated successfully (${report.status})`,
+      report,
+    });
+  } catch (err) {
+    console.error("Status update error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+
 
 router.get("/officer/:id", auth("admin"), async (req, res) => {
   try {
@@ -262,7 +351,9 @@ router.get("/officer/:id", auth("admin"), async (req, res) => {
     console.log("🟢 Officer Inspect API called for ID:", id);
 
     // Fetch officer details
-    const officer = await User.findById(id).select("name email department role");
+    const officer = await User.findById(id).select(
+      "name email department role"
+    );
     console.log("👤 Officer fetched:", officer);
 
     if (!officer) {
@@ -347,7 +438,6 @@ router.get("/officer/:id", auth("admin"), async (req, res) => {
   }
 });
 
-
 // Fetch single text report by ID
 router.get(
   "/textreports/:id",
@@ -404,7 +494,6 @@ router.get(
     }
   }
 );
-
 
 /* ------------------------------------------------------------------
    📋 Fetch Reports (with filters)
@@ -498,10 +587,7 @@ router.get("/officer-queue", auth("officer"), async (req, res) => {
     const geoReports = await Report.find({
       department: userDepartment,
       "citizenAdminVerification.verified": true, // ✅ CHANGED from adminVerification
-      $nor: [
-        { status: "Resolved" },
-        { status: "Rejected" }
-      ]
+      $nor: [{ status: "Resolved" }, { status: "Rejected" }],
     })
       .populate("reporter", "name email role")
       .populate("assignedTo", "name email role department")
@@ -511,10 +597,7 @@ router.get("/officer-queue", auth("officer"), async (req, res) => {
     const textReports = await TextAddressReport.find({
       department: userDepartment,
       "citizenAdminVerification.verified": true, // ✅ CHANGED
-      $nor: [
-        { status: "Resolved" },
-        { status: "Rejected" }
-      ]
+      $nor: [{ status: "Resolved" }, { status: "Rejected" }],
     })
       .populate("reporter", "name email role")
       .populate("assignedTo", "name email role department")
@@ -543,8 +626,6 @@ router.get("/officer-queue", auth("officer"), async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
-
 
 /* ------------------------------------------------------------------
 📍 Get Single Report with Transfer Logs
@@ -591,208 +672,10 @@ router.get("/:id", auth(), async (req, res) => {
 });
 
 
-/* ------------------------------------------------------------------
-   🧑‍🔧 Update Report Status (Officer/Admin, includes Admin Verification)
--------------------------------------------------------------------*/
-router.post("/:id/status", auth(["officer", "admin"]), async (req, res) => {
-  try {
-    const { status, note, media, adminApprove } = req.body; // adminApprove for admin action
 
-    const allowed = [
-      "Open",
-      "Acknowledged",
-      "In Progress",
-      "Resolved",
-      "Rejected",
-    ];
-    if (!status || !allowed.includes(status))
-      return res.status(400).json({ message: "Invalid status" });
-
-    // Find report in either collection
-    let report =
-      (await Report.findById(req.params.id)) ||
-      (await TextAddressReport.findById(req.params.id));
-
-    if (!report) return res.status(404).json({ message: "Report not found" });
-
-    // Officer validation
-    if (
-      req.user.role === "officer" &&
-      req.user.department !== report.department
-    )
-      return res.status(403).json({ message: "Unauthorized" });
-
-    const formattedMedia = (media || []).map((m) => ({
-      url: m.url,
-      mime: m.mime,
-      uploadedBy: req.user.role,
-      uploadedAt: new Date(),
-    }));
-
-    /* -----------------------------
-       👮 OFFICER UPDATES
-    ----------------------------- */
-    if (req.user.role === "officer") {
-      // Officers cannot directly resolve/reject; move to pendingStatus
-      if (status === "Resolved" || status === "Rejected") {
-        if (!media || media.length === 0) {
-          return res.status(400).json({
-            message:
-              "Officer must upload proof media when proposing Resolved/Rejected.",
-          });
-        }
-
-        report.pendingStatus = status;
-        report.adminVerification = report.adminVerification || {
-          verified: null,
-          note: "",
-          admin: null,
-          history: [],
-        };
-
-        // 🟡 Add "(Pending Admin Approval)" tag in statusHistory
-        report.statusHistory.push({
-          status: `${status} (Pending Admin Approval)`,
-          by: req.user.id,
-          note: note || "",
-          media: formattedMedia,
-          at: new Date(),
-        });
-
-        await report.save();
-
-        return res.json({
-          message: `Officer proposed status "${status}". Pending admin verification.`,
-          report,
-        });
-      }
-
-      // Other status updates (Open, Acknowledged, In Progress)
-      report.status = status;
-      report.statusHistory.push({
-        status,
-        by: req.user.id,
-        note: note || "",
-        media: formattedMedia,
-        at: new Date(),
-      });
-
-      await report.save();
-
-      // Notify reporter
-      await Notification.create({
-        user: report.reporter,
-        message: `Your report "${report.title}" status changed to "${status}" by officer.`,
-      });
-
-      return res.json({ message: "Status updated", report });
-    }
-
-    /* -----------------------------
-       🧑‍💼 ADMIN VERIFICATION
-    ----------------------------- */
-    if (req.user.role === "admin") {
-      if (typeof adminApprove === "undefined") {
-        return res
-          .status(400)
-          .json({ message: "adminApprove required for admin action" });
-      }
-
-      if (!report.pendingStatus) {
-        return res
-          .status(400)
-          .json({ message: "No pending officer status to verify" });
-      }
-
-      if (!report.adminVerification) {
-        report.adminVerification = {
-          verified: null,
-          note: "",
-          admin: null,
-          history: [],
-        };
-      }
-
-      report.adminVerification.verified = adminApprove;
-      report.adminVerification.note = note || "";
-      report.adminVerification.verifiedAt = new Date();
-      report.adminVerification.history.push({
-        admin: req.user.id,
-        action: adminApprove ? "approved" : "rejected",
-        note: note || "",
-        createdAt: new Date(),
-      });
-
-      if (adminApprove) {
-        // ✅ Approved: apply pendingStatus, remove (Pending Admin Approval)
-        report.status = report.pendingStatus;
-        report.pendingStatus = null;
-
-        // Update last statusHistory entry if it contained (Pending Admin Approval)
-        const lastEntry = report.statusHistory[report.statusHistory.length - 1];
-        if (lastEntry && lastEntry.status.includes("(Pending Admin Approval)")) {
-          lastEntry.status = report.status; // Clean status name
-          lastEntry.note = `${lastEntry.note || ""} (Approved by Admin)`;
-        }
-
-        // Notify citizen
-        await Notification.create({
-          user: report.reporter,
-          message: `Your report "${report.title}" has been ${report.status} by admin verification.`,
-        });
-      } else {
-        // ❌ Rejected: keep current status, mark (Rejected by Admin)
-        const lastEntry = report.statusHistory[report.statusHistory.length - 1];
-        if (lastEntry && lastEntry.status.includes("(Pending Admin Approval)")) {
-          lastEntry.status = `${lastEntry.status.replace(
-            "(Pending Admin Approval)",
-            "(Rejected by Admin)"
-          )}`;
-          lastEntry.note = `${lastEntry.note || ""} — Admin rejected: ${
-            note || "No reason provided"
-          }`;
-        }
-
-        report.pendingStatus = null;
-
-        // Notify officer if assigned
-        if (report.assignedTo) {
-          await Notification.create({
-            user: report.assignedTo,
-            message: `Report "${report.title}" status proposed by officer was rejected by admin.`,
-          });
-        }
-      }
-
-      // Log admin action
-      report.statusHistory.push({
-        status: report.status,
-        by: req.user.id,
-        note: adminApprove
-          ? `Admin approved officer proposed status`
-          : `Admin rejected officer proposed status: ${note || "No note provided"}`,
-        media: [],
-        at: new Date(),
-      });
-
-      await report.save();
-
-      return res.json({
-        message: `Admin verification completed. Approved: ${adminApprove}`,
-        report,
-      });
-    }
-  } catch (err) {
-    console.error("Status update error:", err);
-    res.status(500).json({ message: "Server error" });
-  }
-});
-
-
-
-/* ------------------------------------------------------------------
-   👮 Assign Officer (Admin)
--------------------------------------------------------------------*/
+/* ------------------------------------------------------------
+   👮 Assign Officer
+------------------------------------------------------------ */
 router.post("/:id/assign", auth("admin"), async (req, res) => {
   try {
     const { officerId } = req.body;
@@ -811,7 +694,6 @@ router.post("/:id/assign", auth("admin"), async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
 
 // ------------------------------
 // GET Citizen Report Card
@@ -841,8 +723,9 @@ router.get("/citizen/:id", auth("admin"), async (req, res) => {
 
     // Fetch transfer logs for all reports
     const reportIds = allReports.map((r) => r._id);
-    const transfers = await TransferLog.find({ report: { $in: reportIds } })
-      .populate("requestedBy", "name email role");
+    const transfers = await TransferLog.find({
+      report: { $in: reportIds },
+    }).populate("requestedBy", "name email role");
 
     // Process reports for frontend
     const processedReports = allReports.map((r) => {

@@ -4,8 +4,19 @@ import User from "../models/User.js";
 import Report from "../models/Report.js";
 import TextAddressReport from "../models/TextAddressReport.js";
 import auth from "../middleware/auth.js";
+import Notification from "../models/Notification.js";
 
 const router = express.Router();
+
+// Utility function for consistent notification creation
+async function createNotification(userId, message) {
+  try {
+    if (!userId || !message) return;
+    await Notification.create({ user: userId, message });
+  } catch (err) {
+    console.error("❌ Notification creation error:", err.message);
+  }
+}
 
 // -----------------------------
 // Warn a user (with reason)
@@ -13,19 +24,18 @@ const router = express.Router();
 router.post("/warn/:userId", auth("admin"), async (req, res) => {
   try {
     const { reason } = req.body;
-    if (!reason || reason.trim() === "")
+    if (!reason?.trim())
       return res.status(400).json({ message: "Reason is required" });
 
     const user = await User.findById(req.params.userId);
     if (!user) return res.status(404).json({ message: "User not found" });
 
     user.warnings = (user.warnings || 0) + 1;
-    const warningEntry = {
+    user.warningLogs.push({
       reason: reason.trim(),
       admin: req.user._id,
       date: new Date(),
-    };
-    user.warningLogs.push(warningEntry);
+    });
 
     if (user.warnings >= 3 && !user.blocked) {
       user.blocked = true;
@@ -37,6 +47,12 @@ router.post("/warn/:userId", auth("admin"), async (req, res) => {
     }
 
     await user.save();
+
+    // 🔔 Notify user
+    const noteMsg = user.blocked
+      ? `You have been warned and automatically blocked after 3 warnings. Reason: ${reason.trim()}`
+      : `You have received a warning from admin. Reason: ${reason.trim()}`;
+    await createNotification(user._id, noteMsg);
 
     res.json({
       message: user.blocked
@@ -59,7 +75,7 @@ router.post("/warn/:userId", auth("admin"), async (req, res) => {
 router.post("/block/:userId", auth("admin"), async (req, res) => {
   try {
     const { block, reason } = req.body;
-    if (block && (!reason || reason.trim() === ""))
+    if (block && !reason?.trim())
       return res
         .status(400)
         .json({ message: "Reason is required for blocking" });
@@ -77,6 +93,12 @@ router.post("/block/:userId", auth("admin"), async (req, res) => {
 
     await user.save();
 
+    // 🔔 Notify user
+    const noteMsg = block
+      ? `Your account has been blocked by admin. Reason: ${reason.trim()}`
+      : "Your account has been unblocked by admin.";
+    await createNotification(user._id, noteMsg);
+
     res.json({
       message: block ? "User blocked" : "User unblocked",
       blocked: user.blocked,
@@ -87,6 +109,7 @@ router.post("/block/:userId", auth("admin"), async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 // -----------------------------
 // List users (paginated)
@@ -369,20 +392,22 @@ router.post("/verify-report/:id", auth("admin"), async (req, res) => {
     if (approve === undefined)
       return res.status(400).json({ message: "Approval decision required" });
 
+    // Fetch report from either collection
     let report = await Report.findById(req.params.id);
     if (!report) report = await TextAddressReport.findById(req.params.id);
     if (!report) return res.status(404).json({ message: "Report not found" });
 
-    const pendingStatuses = [
-      "Resolved (Pending Admin Approval)",
-      "Rejected (Pending Admin Approval)",
-    ];
-    if (!pendingStatuses.includes(report.status)) {
+    // Use pendingStatus for admin verification eligibility
+    const pendingStatuses = ["Resolved", "Rejected"];
+    const currentPending = report.pendingStatus;
+
+    if (!currentPending || !pendingStatuses.includes(currentPending)) {
       return res.status(400).json({
         message: "Report status not eligible for admin verification",
       });
     }
 
+    // Admin verification logging
     report.adminVerification.verified = approve;
     report.adminVerification.note = note || "";
     report.adminVerification.verifiedAt = new Date();
@@ -393,33 +418,51 @@ router.post("/verify-report/:id", auth("admin"), async (req, res) => {
       createdAt: new Date(),
     });
 
+    // Update status based on admin decision
     if (approve) {
-      report.status = report.status.includes("Resolved")
-        ? "Resolved"
-        : "Rejected";
-      report.statusHistory.push({
-        status: report.status,
-        by: req.user._id,
-        note: `Admin approved officer status: ${note || "No note provided"}`,
-        at: new Date(),
-      });
+      report.status = currentPending === "Resolved" ? "Resolved" : "Rejected";
     } else {
       report.status = "Rejected (by Admin)";
-      report.assignedTo = null;
-      report.statusHistory.push({
-        status: "Rejected (by Admin)",
-        by: req.user._id,
-        note: `Admin rejected officer update: ${note || "No note provided"}`,
-        at: new Date(),
-      });
+      report.assignedTo = null; // optional: unassign officer if rejected
     }
 
+    // Clear pendingStatus after verification
+    report.pendingStatus = null;
+
+    // Add to status history
+    report.statusHistory.push({
+      status: report.status,
+      by: req.user._id,
+      note: approve
+        ? `Admin approved officer update: ${note || "No note provided"}`
+        : `Admin rejected officer update: ${note || "No note provided"}`,
+      at: new Date(),
+    });
+
     await report.save();
+
+    // 🔔 Notify officer (if assigned)
+    if (report.assignedTo) {
+      await createNotification(
+        report.assignedTo,
+        approve
+          ? `Admin approved your status update on report "${report.title}".`
+          : `Admin rejected your status update on report "${report.title}".`
+      );
+    }
+
+    // 🔔 Notify citizen (reporter)
+    await createNotification(
+      report.reporter,
+      approve
+        ? `Your report "${report.title}" has been approved and marked as ${report.status}.`
+        : `Your report "${report.title}" was reviewed by admin and marked as ${report.status}.`
+    );
 
     res.json({
       message: approve
         ? "Report approved successfully"
-        : "Report rejected, reassigned to officer queue",
+        : "Report rejected by admin",
       report,
     });
   } catch (err) {
@@ -427,5 +470,6 @@ router.post("/verify-report/:id", auth("admin"), async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
 
 export default router;

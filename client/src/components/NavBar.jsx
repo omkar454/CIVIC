@@ -10,7 +10,7 @@ export default function Navbar({
   name,
 }) {
   // Only show notification bell for officers and citizens
-  const showNotificationBell = role === "citizen" || role === "officer";
+  const showNotificationBell = role === "citizen" || role === "officer" || role === "admin";
 
   return (
     <nav className="flex justify-between items-center bg-white dark:bg-gray-800 shadow px-6 py-3">

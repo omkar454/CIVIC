@@ -10,6 +10,18 @@ import Notification from "../models/Notification.js";
 const router = express.Router();
 
 /* ------------------------------------------------------------
+   🧩 Small helper to send notifications
+------------------------------------------------------------ */
+async function createNotification(userId, message) {
+  try {
+    if (!userId || !message) return;
+    await Notification.create({ user: userId, message });
+  } catch (err) {
+    console.error("❌ Notification error:", err.message);
+  }
+}
+
+/* ------------------------------------------------------------
    🗂 Category ↔ Department mapping
 ------------------------------------------------------------ */
 const categoryToDept = {
@@ -45,11 +57,10 @@ router.post("/:reportId/request", auth("officer"), async (req, res) => {
   try {
     const { newDepartment, reason } = req.body;
 
-    if (!newDepartment || !reason) {
+    if (!newDepartment || !reason)
       return res
         .status(400)
         .json({ message: "New department and reason are required." });
-    }
 
     const report =
       (await Report.findById(req.params.reportId)) ||
@@ -76,15 +87,20 @@ router.post("/:reportId/request", auth("officer"), async (req, res) => {
       reason,
     });
 
-    // Notify all admins
+    // 🔔 Notify all admins about new transfer request
     const admins = await User.find({ role: "admin" });
-    if (admins.length) {
-      const notifications = admins.map((a) => ({
-        user: a._id,
-        message: `🔄 Transfer request submitted for "${report.title}" from ${report.department} → ${newDepartment}`,
-      }));
-      await Notification.insertMany(notifications);
-    }
+    const adminNotifications = admins.map((a) => ({
+      user: a._id,
+      message: `🔄 Transfer request submitted by officer for "${report.title}" from ${report.department} → ${newDepartment}.`,
+    }));
+    if (adminNotifications.length)
+      await Notification.insertMany(adminNotifications);
+
+    // 🔔 Notify the requesting officer
+    await createNotification(
+      req.user.id,
+      `📤 Transfer request for "${report.title}" sent to admin for verification.`
+    );
 
     res.status(201).json({
       message: "Transfer request submitted for admin verification.",
@@ -138,15 +154,15 @@ router.post("/:transferId/verify", auth("admin"), async (req, res) => {
 
       transfer.status = "completed";
 
-      // Notify requester (officer)
-      await Notification.create({
-        user: transfer.requestedBy._id,
-        message: `✅ Transfer approved for "${transfer.report.title}" → ${
+      // 🔔 Notify requester (officer)
+      await createNotification(
+        transfer.requestedBy._id,
+        `✅ Admin approved transfer for "${transfer.report.title}" → ${
           transfer.newDepartment
-        } (${updatedReport?.category || "other"}).`,
-      });
+        } (${updatedReport?.category || "other"}).`
+      );
 
-      // Notify new department officers
+      // 🔔 Notify officers of new department
       const newDeptOfficers = await User.find({
         role: "officer",
         department: transfer.newDepartment,
@@ -157,20 +173,31 @@ router.post("/:transferId/verify", auth("admin"), async (req, res) => {
           user: o._id,
           message: `📋 Report "${
             transfer.report.title
-          }" transferred to your department (${
+          }" has been transferred to your department (${
             updatedReport?.category || "other"
           }).`,
         }));
         await Notification.insertMany(notify);
       }
+
+      // 🔔 Notify admins confirming action success
+      const admins = await User.find({ role: "admin" });
+      for (const a of admins) {
+        await createNotification(
+          a._id,
+          `✅ Transfer approved for "${transfer.report.title}" (${transfer.oldDepartment} → ${transfer.newDepartment}).`
+        );
+      }
     } else {
       transfer.status = "rejected";
-      await Notification.create({
-        user: transfer.requestedBy._id,
-        message: `❌ Transfer rejected for "${
-          transfer.report.title
-        }". Reason: ${adminReason || "No reason provided"}.`,
-      });
+
+      // 🔔 Notify officer of rejection
+      await createNotification(
+        transfer.requestedBy._id,
+        `❌ Admin rejected transfer for "${transfer.report.title}". Reason: ${
+          adminReason || "No reason provided"
+        }.`
+      );
     }
 
     await transfer.save();

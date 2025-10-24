@@ -84,30 +84,28 @@ export default function ReportDetail() {
     }
   };
 
-  const handleAdminDecision = async (isApproved) => {
-    if (!adminNote.trim()) {
-      alert("Please provide a note for admin verification.");
-      return;
-    }
+ const handleAdminDecision = async (isApproved) => {
+   if (!adminNote.trim()) {
+     alert("Please provide a note for admin verification.");
+     return;
+   }
 
-    try {
-      await API.post(`/reports/${id}/status`, {
-        adminApprove: true,
-        verified: isApproved,
-        note: adminNote,
-        status: report.pendingStatus || report.status, // send valid status
-      });
+   try {
+     const res = await API.post(`/admin/verify-report/${id}`, {
+       approve: isApproved,
+       note: adminNote,
+     });
 
-      alert(
-        `Report has been ${isApproved ? "approved" : "rejected"} by admin.`
-      );
-      setAdminNote("");
-      fetchReport();
-    } catch (err) {
-      console.error("Admin verification error:", err);
-      alert(err.response?.data?.message || "Failed to verify report.");
-    }
-  };
+     alert(res.data.message);
+     setAdminNote("");
+     fetchReport(); // refresh report after update
+   } catch (err) {
+     console.error("Admin verification error:", err);
+     alert(err.response?.data?.message || "Failed to verify report.");
+   }
+ };
+
+
 
   useEffect(() => {
     fetchReport();

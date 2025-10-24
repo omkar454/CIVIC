@@ -15,6 +15,8 @@ import AdminVerification from "./pages/AdminVerification";
 import AdminTransferVerification from "./pages/AdminTransferVerification";
 import OfficerInspect from "./pages/OfficerInspect";
 import CitizenReportCard from "./pages/CitizenReportCard";
+import NotificationsPage from "./pages/NotificationsPage";
+
 
 import PrivateRoute from "./components/PrivateRoute";
 import Sidebar from "./components/Sidebar";
@@ -101,6 +103,14 @@ function App() {
             ) : (
               <>
                 <Route path="/" element={<Home />} />
+                <Route
+                  path="/notifications"
+                  element={
+                    <PrivateRoute roles={["citizen", "officer", "admin"]}>
+                      <NotificationsPage />
+                    </PrivateRoute>
+                  }
+                />
 
                 {/* Officer Routes */}
                 <Route
