@@ -140,35 +140,75 @@ router.get("/users", auth("admin"), async (req, res) => {
 });
 
 // -----------------------------
-// Export reports (JSON or CSV)
+// Export verified reports (JSON or CSV)
+// Only include reports with status != "Open"
 // -----------------------------
 router.get("/export/reports", auth("admin"), async (req, res) => {
   try {
-    const reports = await Report.find().populate("reporter", "name email role");
-    const textReports = await TextAddressReport.find().populate(
-      "reporter",
-      "name email role"
-    );
+    // Fetch both report types but exclude 'Open'
+    const reports = await Report.find({ status: { $ne: "Open" } })
+      .populate("reporter", "name email role")
+      .populate("assignedTo", "name email role");
+
+    const textReports = await TextAddressReport.find({ status: { $ne: "Open" } })
+      .populate("reporter", "name email role")
+      .populate("assignedTo", "name email role");
 
     const allReports = [...reports, ...textReports];
 
+    // If no reports found
+    if (allReports.length === 0) {
+      return res.status(404).json({ message: "No verified reports found" });
+    }
+
+    // ✅ CSV export
     if (req.query.format === "csv") {
-      const csvHeader = "id,title,category,status,reporter\n";
+      const csvHeader =
+        "id,title,category,department,status,reporter,assignedTo,createdAt,updatedAt\n";
+
       const csvRows = allReports
-        .map(
-          (r) =>
-            `${r._id},${r.title},${r.category},${r.status},${
-              r.reporter?.email || "N/A"
-            }`
-        )
+        .map((r) => {
+          const id = r._id || "";
+          const title = (r.title || "").replace(/,/g, " ");
+          const category = (r.category || "").replace(/,/g, " ");
+          const department = (r.department || "").replace(/,/g, " ");
+          const status = r.status || "";
+          const reporter = r.reporter?.email || "N/A";
+          const assignedTo = r.assignedTo?.email || "N/A";
+          const createdAt = r.createdAt
+            ? new Date(r.createdAt).toLocaleString()
+            : "";
+          const updatedAt = r.updatedAt
+            ? new Date(r.updatedAt).toLocaleString()
+            : "";
+          return `${id},${title},${category},${department},${status},${reporter},${assignedTo},${createdAt},${updatedAt}`;
+        })
         .join("\n");
 
       res.setHeader("Content-Type", "text/csv");
-      res.setHeader("Content-Disposition", "attachment; filename=reports.csv");
+      res.setHeader(
+        "Content-Disposition",
+        "attachment; filename=verified_reports.csv"
+      );
       return res.send(csvHeader + csvRows);
     }
 
-    res.json({ count: allReports.length, reports: allReports });
+    // ✅ JSON export
+    const reportsJson = allReports.map((r) => ({
+      id: r._id,
+      title: r.title,
+      category: r.category,
+      department: r.department,
+      status: r.status,
+      reporter: r.reporter?.name || "N/A",
+      reporterEmail: r.reporter?.email || "N/A",
+      assignedTo: r.assignedTo?.name || "N/A",
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+      location: r.location || null,
+    }));
+
+    res.json({ count: reportsJson.length, reports: reportsJson });
   } catch (err) {
     console.error("Export reports error:", err);
     res.status(500).json({ message: "Server error" });

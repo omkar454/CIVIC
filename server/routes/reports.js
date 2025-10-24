@@ -32,8 +32,11 @@ const mapCategoryToDepartment = (category) =>
 /* ------------------------------------------------------------
    ⚙️ Utility: Calculate Priority
 ------------------------------------------------------------ */
-const calculatePriority = (severity = 3, votes = 0) =>
-  severity * 10 + votes * 5;
+function calculatePriority(severity, votes) {
+  if (!severity || severity <= 0) return 0; // ✅ ignore unset severity
+  return severity * 10 + votes * 2;
+}
+
 
 /* ------------------------------------------------------------
    🗺️ Geocode Address using OpenStreetMap
@@ -140,7 +143,7 @@ router.get("/check-sla", auth("admin"), async (req, res) => {
 
 
 /* ------------------------------------------------------------
-   📝 Create Report
+   📝 Create Report (Citizen)
 ------------------------------------------------------------ */
 router.post("/", auth("citizen"), async (req, res) => {
   try {
@@ -148,7 +151,7 @@ router.post("/", auth("citizen"), async (req, res) => {
       title,
       description,
       category,
-      severity = 3,
+      severity, // ✅ no default value
       address = "",
       location,
       media,
@@ -161,18 +164,26 @@ router.post("/", auth("citizen"), async (req, res) => {
     const department = mapCategoryToDepartment(category);
     let coordinates = location?.coordinates;
 
-    // Case 1: Text-only manual address
+    // ✅ Severity will remain 0 until admin updates it
+    const initialSeverity = severity && severity > 0 ? severity : 0;
+
+    // ✅ Priority score should not depend on unassigned severity
+    const initialPriorityScore =
+      initialSeverity > 0 ? calculatePriority(initialSeverity, 0) : 0;
+
+    // Case 1️⃣: Manual address report
     if (address && (!coordinates || coordinates.length !== 2)) {
       const textReport = await TextAddressReport.create({
         title,
         description,
         category,
-        severity,
+        severity: initialSeverity,
         department,
         reporter: req.user.id,
         address: address.trim(),
         media,
         questionToOfficer: questionToOfficer.trim() || "",
+        priorityScore: initialPriorityScore,
       });
 
       if (questionToOfficer.trim()) {
@@ -192,15 +203,13 @@ router.post("/", auth("citizen"), async (req, res) => {
         await Notification.insertMany(notifications);
       }
 
-      return res
-        .status(201)
-        .json({
-          message: "Manual address report submitted",
-          report: textReport,
-        });
+      return res.status(201).json({
+        message: "Manual address report submitted",
+        report: textReport,
+      });
     }
 
-    // Case 2: Geocoded report
+    // Case 2️⃣: Geocoded report
     if ((!coordinates || coordinates.length !== 2) && address) {
       const geo = await geocodeAddress(address);
       if (geo) coordinates = geo;
@@ -215,13 +224,13 @@ router.post("/", auth("citizen"), async (req, res) => {
       title,
       description,
       category,
-      severity,
+      severity: initialSeverity,
       department,
       reporter: req.user.id,
       address: address.trim(),
       media,
       location: { type: "Point", coordinates: coordinates.map(Number) },
-      priorityScore: calculatePriority(severity, 0),
+      priorityScore: initialPriorityScore,
     });
 
     if (questionToOfficer.trim()) {
@@ -247,6 +256,8 @@ router.post("/", auth("citizen"), async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
+
+
 
 
 /* ------------------------------------------------------------

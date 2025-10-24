@@ -169,75 +169,76 @@ const handleTransfer = async () => {
               </tr>
             </thead>
             <tbody>
-              {reports.map((r) => {
-                const hasVoted = r.voters?.includes(userId);
-                const canVote =
-                  userRole === "citizen" && r.reporter?._id !== userId;
-                return (
-                  <tr
-                    key={r._id}
-                    className={`border-t hover:bg-gray-50 ${
-                      darkMode ? "hover:bg-gray-700" : ""
-                    }`}
-                  >
-                    <td className="p-2 font-semibold">{r.title}</td>
-                    <td>{r.category}</td>
-                    <td>{r.severity}</td>
-                    <td>
-                      <Badge
-                        className={`rounded-full px-2 py-1 ${
-                          statusColor[r.status] || "bg-gray-100 text-gray-700"
-                        }`}
-                      >
-                        {r.status}
-                      </Badge>
-                    </td>
-                    <td>
-                      {r.reporter?.name || "Unknown"} (
-                      {r.reporter?.email || "N/A"})
-                    </td>
-                    <td>
-                      {new Date(r.createdAt).toLocaleString(undefined, {
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      })}
-                    </td>
-                    <td className="space-x-2">
-                      <Link to={`/reports/${r._id}`}>
-                        <Button size="sm" variant="default">
-                          View
-                        </Button>
-                      </Link>
-                      <Link to={`/reports/${r._id}/track`}>
-                        <Button size="sm" variant="secondary">
-                          Track
-                        </Button>
-                      </Link>
-
-                      {userRole === "citizen" && canVote && (
-                        <Button
-                          size="sm"
-                          variant={hasVoted ? "destructive" : "outline"}
-                          onClick={() => handleVote(r)}
+              {reports
+                .filter((r) => !(userRole === "officer" && r.status === "Open")) // <-- filter Open for officer
+                .map((r) => {
+                  const hasVoted = r.voters?.includes(userId);
+                  const canVote =
+                    userRole === "citizen" && r.reporter?._id !== userId;
+                  return (
+                    <tr
+                      key={r._id}
+                      className={`border-t hover:bg-gray-50 ${
+                        darkMode ? "hover:bg-gray-700" : ""
+                      }`}
+                    >
+                      <td className="p-2 font-semibold">{r.title}</td>
+                      <td>{r.category}</td>
+                      <td>{r.severity}</td>
+                      <td>
+                        <Badge
+                          className={`rounded-full px-2 py-1 ${
+                            statusColor[r.status] || "bg-gray-100 text-gray-700"
+                          }`}
                         >
-                          {hasVoted ? "Cancel Vote" : "Vote"}
-                        </Button>
-                      )}
+                          {r.status}
+                        </Badge>
+                      </td>
+                      <td>
+                        {r.reporter?.name || "Unknown"} (
+                        {r.reporter?.email || "N/A"})
+                      </td>
+                      <td>
+                        {new Date(r.createdAt).toLocaleString(undefined, {
+                          dateStyle: "medium",
+                          timeStyle: "short",
+                        })}
+                      </td>
+                      <td className="space-x-2">
+                        <Link to={`/reports/${r._id}`}>
+                          <Button size="sm" variant="default">
+                            View
+                          </Button>
+                        </Link>
+                        <Link to={`/reports/${r._id}/track`}>
+                          <Button size="sm" variant="secondary">
+                            Track
+                          </Button>
+                        </Link>
 
-                      {/* Officer Transfer button (instead of Reject) */}
-                      {userRole === "officer" && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => openTransferModal(r._id)}
-                        >
-                          Transfer
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                );
-              })}
+                        {userRole === "citizen" && canVote && (
+                          <Button
+                            size="sm"
+                            variant={hasVoted ? "destructive" : "outline"}
+                            onClick={() => handleVote(r)}
+                          >
+                            {hasVoted ? "Cancel Vote" : "Vote"}
+                          </Button>
+                        )}
+
+                        {userRole === "officer" && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openTransferModal(r._id)}
+                          >
+                            Transfer
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>

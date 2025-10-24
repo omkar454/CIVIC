@@ -637,14 +637,31 @@ const generateQRCode = async () => {
         </div>
       )}
 
-      {/* ---------------- Comments / Pending Transfer ---------------- */}
+      {/* ---------------- Comments / Status Message ---------------- */}
       <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3">
         <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
-          Comments
+          {report.status === "Resolved"
+            ? "Report Status"
+            : report.status === "Rejected"
+            ? "Report Status"
+            : "Comments"}
         </h2>
 
-        {/* Pending Transfer Message */}
-        {report.transfer?.requested && report.transfer.status === "pending" ? (
+        {report.status === "Open" ? (
+          <p className="text-gray-500 italic">
+            This report is currently awaiting admin approval. Comments will be
+            available once verified.
+          </p>
+        ) : report.status === "Resolved" ? (
+          <p className="text-green-700 dark:text-green-400 font-semibold">
+            This report has been successfully resolved and completed.
+          </p>
+        ) : report.status === "Rejected" ? (
+          <p className="text-red-700 dark:text-red-400 font-semibold">
+            Admin has rejected this report. It is no longer under consideration.
+          </p>
+        ) : report.transfer?.requested &&
+          report.transfer.status === "pending" ? (
           <p className="text-gray-500 italic">
             This report has been transferred to another department. Comments are
             temporarily hidden until admin approves the transfer.
@@ -709,9 +726,13 @@ const generateQRCode = async () => {
           <p className="text-gray-500">No comments yet.</p>
         )}
 
+        {/* Add comment input for citizens */}
         {canComment &&
           (!report.transfer?.requested ||
-            report.transfer.status === "approved") && (
+            report.transfer.status === "approved") &&
+          report.status !== "Open" &&
+          report.status !== "Resolved" &&
+          report.status !== "Rejected" && (
             <div className="mt-3 flex gap-2">
               <input
                 type="text"

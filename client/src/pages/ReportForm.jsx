@@ -118,7 +118,6 @@ export default function ReportForm() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const [questionText, setQuestionText] = useState("");
   const [existingReports, setExistingReports] = useState([]);
   const [locationOption, setLocationOption] = useState("map");
 
@@ -276,20 +275,7 @@ export default function ReportForm() {
       // Correct report ID
       const reportId = res.data.report._id;
 
-      // -------------------------------
-      // 4️⃣ Optional Question to Officer
-      // -------------------------------
-      if (questionText.trim()) {
-        try {
-          await axios.post(
-            `http://localhost:5000/api/reports/${reportId}/comments`,
-            { message: questionText },
-            { headers: { Authorization: `Bearer ${token}` } }
-          );
-        } catch (commentErr) {
-          console.warn("Failed to submit officer question:", commentErr);
-        }
-      }
+    
 
       // -------------------------------
       // 5️⃣ Reset Form
@@ -305,7 +291,6 @@ export default function ReportForm() {
       setPosition(null);
       setManualAddress("");
       setLiveAddress("");
-      setQuestionText("");
       setLocationOption("map");
 
       // Navigate to the report detail page
@@ -437,18 +422,7 @@ export default function ReportForm() {
             )}
           </div>
 
-          {/* Question */}
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Question to Officer (optional)
-            </label>
-            <textarea
-              value={questionText}
-              onChange={(e) => setQuestionText(e.target.value)}
-              placeholder="Your question will be sent to the concerned officer automatically"
-              className="w-full border rounded px-3 py-2 h-16 focus:outline-none focus:ring focus:ring-blue-400 dark:bg-gray-700 dark:text-white"
-            />
-          </div>
+         
 
           {/* Location selection */}
           <div>

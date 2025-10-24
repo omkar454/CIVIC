@@ -161,7 +161,7 @@ export default function AdminPage() {
   // ---------------- Export Reports ----------------
   const exportReports = async (format = "json") => {
     try {
-      const res = await API.get("/reports");
+      const res = await API.get("/admin/export/reports");
       const reports = res.data.reports || [];
       if (!reports.length) {
         alert("No reports to export.");
@@ -349,24 +349,35 @@ export default function AdminPage() {
       {renderUserTable(users, "Citizens")}
       {renderUserTable(officers, "Officers")}
 
-      {/* Export Reports */}
-      <Card>
+      {/* Export Reports for BMC Data Analysis */}
+      <Card className="border border-blue-200 shadow-lg">
         <CardContent className="space-y-3">
-          <h2 className="text-xl font-semibold">Export Reports</h2>
+          <h2 className="text-xl font-semibold text-blue-700">
+            Send Verified Reports for BMC Data Analysis
+          </h2>
+          <p className="text-gray-600 dark:text-gray-300 text-sm">
+            Export all verified (non-open) reports in structured format for
+            analytical review, performance tracking, and data-driven
+            decision-making at BMC headquarters.
+          </p>
           <div className="flex flex-wrap gap-3">
             <Button
               className="bg-blue-600 hover:bg-blue-700 text-white"
               onClick={() => exportReports("json")}
             >
-              Export JSON
+              Send as JSON File
             </Button>
             <Button
               className="bg-green-600 hover:bg-green-700 text-white"
               onClick={() => exportReports("csv")}
             >
-              Export CSV
+              Send as CSV File
             </Button>
           </div>
+          <p className="text-xs text-gray-500 italic">
+            *Only includes reports that are resolved, in progress, or rejected
+            (excluding open reports).*
+          </p>
         </CardContent>
       </Card>
 
@@ -375,7 +386,9 @@ export default function AdminPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <Card>
             <CardContent>
-              <h2 className="text-xl font-semibold mb-4">Reports by Category</h2>
+              <h2 className="text-xl font-semibold mb-4">
+                Reports by Category
+              </h2>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={analytics.byCategory || []}>
                   <XAxis dataKey="category" />
