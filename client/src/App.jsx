@@ -20,7 +20,8 @@ import NotificationsPage from "./pages/NotificationsPage";
 
 import PrivateRoute from "./components/PrivateRoute";
 import Sidebar from "./components/Sidebar";
-import Navbar from "./components/Navbar";
+import Navbar from "./components/NavBar";
+import LandingPage from "./pages/LandingPage";
 
 function App() {
   const [userRole, setUserRole] = useState(null);
@@ -37,7 +38,6 @@ function App() {
     const savedMode = localStorage.getItem("darkMode");
     if (savedMode === "true") setDarkMode(true);
   }, []);
-
   const handleLogout = () => {
     localStorage.clear();
     setUserRole(null);
@@ -72,6 +72,7 @@ function App() {
           <Routes>
             {!userRole ? (
               <>
+              <Route path="/" element={<LandingPage />} />
                 <Route
                   path="/login"
                   element={
@@ -90,15 +91,7 @@ function App() {
                     />
                   }
                 />
-                <Route
-                  path="*"
-                  element={
-                    <Login
-                      setUserRole={setUserRole}
-                      setUserName={setUserName}
-                    />
-                  }
-                />
+                <Route path="*" element={<LandingPage />} />
               </>
             ) : (
               <>

@@ -1,3 +1,85 @@
+/* src/index.css */
+
+/* 1. ALL imports MUST come first */
 @import url("https://unpkg.com/leaflet/dist/leaflet.css");
 @import "tailwindcss";
+
+/* 3. Then, any custom rules */
 @custom-variant dark (&:where(.dark, .dark *));
+
+/*
+========================================
+  FORCE HIDE GOOGLE TRANSLATE BANNER
+========================================
+*/
+
+/* Hide the banner's iframe */
+iframe.goog-te-banner-frame,
+.goog-te-banner-frame.skiptranslate {
+  display: none !important;
+  visibility: hidden !important;
+  height: 0 !important;
+  width: 0 !important;
+  position: absolute !important;
+  top: -9999px !important;
+  left: -9999px !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* Prevent the body from being pushed down */
+body {
+  top: 0px !important;
+  position: static !important;
+  margin-top: 0 !important;
+}
+
+/* Hide the "original text" tooltip that can appear */
+.goog-tooltip {
+  display: none !important;
+  visibility: hidden !important;
+}
+.goog-tooltip:hover {
+  display: none !important;
+  visibility: hidden !important;
+}
+
+/* ====================================================
+   EXTRA FIXES: Remove all Google Translate overlays,
+   tooltips, and menu frames completely
+==================================================== */
+#goog-gt-tt,
+.goog-te-balloon-frame,
+.goog-te-menu-frame,
+.goog-te-banner-frame,
+.goog-te-gadget-simple,
+.goog-te-spinner-pos {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  height: 0 !important;
+  width: 0 !important;
+  position: absolute !important;
+  top: -9999px !important;
+  left: -9999px !important;
+  z-index: -9999 !important;
+}
+
+/* Keep the page layout stable */
+html,
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+  overflow-x: hidden;
+  top: 0 !important;
+}
+
+/* Ensure no translation elements show anywhere */
+.goog-logo-link,
+.goog-te-gadget,
+.goog-te-gadget-simple,
+.goog-te-menu-value,
+.goog-te-banner {
+  display: none !important;
+  visibility: hidden !important;
+}
