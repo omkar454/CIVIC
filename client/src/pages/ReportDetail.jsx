@@ -199,7 +199,7 @@ const generateQRCode = async () => {
 
     try {
       // Send to backend
-      await API.post(`/reports/${id}/status`, {
+      await API.put(`/reports/${id}/status`, {
         status,
         note: statusNote,
         media: uploadedUrls,

@@ -258,8 +258,6 @@ router.post("/", auth("citizen"), async (req, res) => {
 });
 
 
-
-
 /* ------------------------------------------------------------
    🛠️ Update Report Status (Officer/Admin)
 ------------------------------------------------------------ */
@@ -268,84 +266,130 @@ router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
     const { status, comment, media } = req.body;
     const user = req.user;
 
+    // Fetch report with reporter and assignedTo
     const report = await Report.findById(req.params.id)
       .populate("reporter")
       .populate("assignedTo");
 
     if (!report) return res.status(404).json({ message: "Report not found" });
 
-    // -----------------------------------------
-    // ✅ Upload media (if any) to Cloudinary
-    // -----------------------------------------
+    // ----------------------------
+    // Format media files
+    // ----------------------------
     let formattedMedia = [];
-
     if (Array.isArray(media) && media.length > 0) {
       formattedMedia = media.map((file) => ({
         url: file.url,
         mime: file.mime || "image/jpeg",
-        uploadedBy: user.role, // 'officer' or 'admin'
+        uploadedBy: user.role,
         uploadedAt: new Date(),
       }));
     }
 
-    // -----------------------------------------
-    // ✅ Push new status history
-    // -----------------------------------------
-    report.statusHistory.push({
-      status,
-      comment,
-      updatedBy: user.id,
-      media: formattedMedia,
-    });
-
-    // -----------------------------------------
-    // ✅ Handle officer updates
-    // -----------------------------------------
+    // ----------------------------
+    // Officer updates
+    // ----------------------------
     if (user.role === "officer") {
       if (status === "In Progress") {
         report.status = "In Progress";
       } else if (status === "Resolved" || status === "Rejected") {
-        report.status = "Pending Verification"; // send to admin for approval
+        // Send for admin verification
+        report.pendingStatus = status;
+
+        // Initialize adminVerification if missing
+        if (!report.adminVerification) {
+          report.adminVerification = {
+            verified: null,
+            note: "",
+            verifiedAt: null,
+            history: [],
+          };
+        }
+      } else if (status === "Open" || status === "Acknowledged") {
+        report.status = status;
+      } else {
+        return res.status(400).json({ message: "Invalid officer status value" });
       }
 
-      // Notify admins
-      const admins = await User.find({ role: "admin" });
-      if (admins.length) {
-        const adminNotifications = admins.map((a) => ({
-          user: a._id,
-          message: `📋 Report "${report.title}" marked as ${status} by officer. Awaiting your verification.`,
-        }));
-        await Notification.insertMany(adminNotifications);
+      // Push status history
+      report.statusHistory.push({
+        status,
+        by: user._id,
+        actorRole: user.role,
+        note: comment || "",
+        media: formattedMedia,
+        at: new Date(),
+      });
+
+      // Notify all admins if pending verification
+      if (status === "Resolved" || status === "Rejected") {
+        const admins = await User.find({ role: "admin" });
+        if (admins.length > 0) {
+          const notifications = admins.map((a) => ({
+            user: a._id,
+            message: `📋 Report "${report.title}" marked as ${status} by officer. Awaiting your verification.`,
+          }));
+          await Notification.insertMany(notifications);
+        }
       }
     }
 
-    // -----------------------------------------
-    // ✅ Handle admin verification updates
-    // -----------------------------------------
+    // ----------------------------
+    // Admin updates
+    // ----------------------------
     if (user.role === "admin") {
+      if (!report.adminVerification) {
+        // Ensure adminVerification exists
+        report.adminVerification = { verified: null, note: "", verifiedAt: null, history: [] };
+      }
+
       if (status === "Verified - Resolved") {
         report.status = "Resolved";
+        report.pendingStatus = null;
+        report.adminVerification.verified = true;
+        report.adminVerification.note = comment || "";
+        report.adminVerification.verifiedAt = new Date();
+        report.adminVerification.history.push({
+          admin: user._id,
+          action: "approved",
+          note: comment || "",
+          createdAt: new Date(),
+        });
       } else if (status === "Verified - Rejected") {
         report.status = "Rejected";
+        report.pendingStatus = null;
+        report.adminVerification.verified = false;
+        report.adminVerification.note = comment || "";
+        report.adminVerification.verifiedAt = new Date();
+        report.adminVerification.history.push({
+          admin: user._id,
+          action: "rejected",
+          note: comment || "",
+          createdAt: new Date(),
+        });
       } else {
         return res.status(400).json({ message: "Invalid admin status value" });
       }
 
-      // Notify the citizen
-      const citizenNotification = new Notification({
+      // Notify citizen
+      await new Notification({
         user: report.reporter._id,
         message: `✅ Your report "${report.title}" has been ${report.status.toLowerCase()} by admin.`,
-      });
-      await citizenNotification.save();
+      }).save();
     }
 
-    // -----------------------------------------
-    // ✅ Save and respond
-    // -----------------------------------------
+    // ----------------------------
+    // Save report
+    // ----------------------------
     await report.save();
 
     res.status(200).json({
-      message: `Status updated successfully (${report.status})`,
+      message:
+        user.role === "officer"
+          ? ["Resolved", "Rejected"].includes(status)
+            ? `Status update sent for admin verification (${status})`
+            : `Status updated to ${status}`
+          : `Report ${report.status} successfully by admin`,
       report,
     });
   } catch (err) {

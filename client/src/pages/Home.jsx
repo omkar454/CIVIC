@@ -276,7 +276,8 @@ useEffect(() => {
             <ul className="list-disc pl-6 mt-2 text-sm text-yellow-700 dark:text-yellow-200">
               {userData.warningLogs.map((w) => (
                 <li key={w._id}>
-                  {new Date(w.date).toLocaleDateString()}: Reason by admin:  {w.reason}
+                  {new Date(w.date).toLocaleDateString()}: Reason by admin:{" "}
+                  {w.reason}
                 </li>
               ))}
             </ul>
@@ -583,6 +584,7 @@ useEffect(() => {
           )}
         </div>
       )}
+
       {role === "admin" && <AdminAnalytics />}
       {role === "officer" && <OfficerAnalytics />}
       {role === "citizen" && <CitizenAnalytics />}
