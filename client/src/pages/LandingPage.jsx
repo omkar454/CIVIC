@@ -4,7 +4,7 @@ import Image2 from '../assets/image2.jpeg';
 import Image3 from '../assets/image3.jpeg';
 import Image4 from '../assets/hero1.jpeg';
 import imagebg from '../assets/imagebg.jpg';
-
+import Image5 from '../assets/image5.jpeg';
 // --- SVG Icons ---
 const MenuIcon = (props) => (
   <svg {...props} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -41,7 +41,7 @@ const heroSlides = [
     title: "Report, Track, and Resolve.",
   },
   {
-    image: Image3, 
+    image: Image5, 
     subtitle: "Building a Better Bandra, Together",
     title: "Your Voice Matters.",
   },
@@ -78,7 +78,7 @@ const Header = () => {
              <a href="/login" className="text-gray-700 font-medium px-6 py-3 rounded-md hover:bg-gray-100 transition duration-300">
               Login
             </a>
-            <a href="#" className="bg-green-600 text-white font-semibold px-6 py-3 rounded-md hover:bg-green-700 transition duration-300">
+            <a href="/login" className="bg-green-600 text-white font-semibold px-6 py-3 rounded-md hover:bg-green-700 transition duration-300">
               Report Issue
             </a>
           </div>
@@ -149,17 +149,29 @@ const Hero = () => {
                     </a>
                 </div>
 
+                {/* Navigation Arrows Fix for Visibility */}
                 <div className="absolute bottom-10 right-10 flex items-center gap-4">
-                    <button onClick={prevSlide} className="w-12 h-12 flex items-center justify-center rounded-full bg-white bg-opacity-10 hover:bg-opacity-20 transition">
-                        <ChevronLeftIcon className="h-6 w-6"/>
+                    <button
+                        onClick={prevSlide}
+                        className="w-12 h-12 flex items-center justify-center rounded-full bg-white bg-opacity-90 hover:bg-opacity-100 shadow-lg transition"
+                    >
+                        <ChevronLeftIcon className="h-6 w-6 text-gray-900" />
                     </button>
-                    <button onClick={nextSlide} className="w-12 h-12 flex items-center justify-center rounded-full bg-white bg-opacity-10 hover:bg-opacity-20 transition">
-                         <ChevronRightIcon className="h-6 w-6"/>
+                    <button
+                        onClick={nextSlide}
+                        className="w-12 h-12 flex items-center justify-center rounded-full bg-white bg-opacity-90 hover:bg-opacity-100 shadow-lg transition"
+                    >
+                        <ChevronRightIcon className="h-6 w-6 text-gray-900" />
                     </button>
                 </div>
-                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
+
+                <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex gap-2">
                     {heroSlides.map((_, index) => (
-                        <button key={index} onClick={() => setCurrentSlide(index)} className={`w-3 h-3 rounded-full transition-colors ${currentSlide === index ? 'bg-white' : 'bg-white bg-opacity-30'}`}></button>
+                        <button
+                            key={index}
+                            onClick={() => setCurrentSlide(index)}
+                            className={`w-3 h-3 rounded-full transition-colors ${currentSlide === index ? 'bg-white' : 'bg-white bg-opacity-30'}`}
+                        ></button>
                     ))}
                 </div>
             </div>
