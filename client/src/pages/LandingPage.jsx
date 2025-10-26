@@ -5,6 +5,11 @@ import Image3 from '../assets/image3.jpeg';
 import Image4 from '../assets/hero1.jpeg';
 import imagebg from '../assets/imagebg.jpg';
 import Image5 from '../assets/image5.jpeg';
+
+import ChatBotModal from "../components/ChatBotModal";
+import GoogleTranslateLanding from "../components/GoogleTranslateLanding";
+
+
 // --- SVG Icons ---
 const MenuIcon = (props) => (
   <svg {...props} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -59,55 +64,140 @@ const Header = () => {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
-    <header className="bg-white shadow-md fix top-0 w-full z-30">
-      <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* --- MODIFICATIONS ARE IN THIS DIV --- */}
-        <div className="relative flex items-center justify-center h-20">
-          
-          {/* --- LOGO REMOVED --- */}
+    <header className="bg-white shadow-md fix top-0 w-full z-30">
+           {" "}
+      <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* --- MODIFICATIONS ARE IN THIS DIV --- */}       {" "}
+        <div className="relative flex items-center justify-center h-20">
+                   {/* --- LOGO REMOVED --- */}         {" "}
+          <div className="hidden md:flex items-center space-x-8">
+                       {" "}
+            <a
+              href="#home"
+              className="text-gray-700 font-medium hover:text-green-600 transition duration-300"
+            >
+              Home
+            </a>
+                       {" "}
+            <a
+              href="#features"
+              className="text-gray-700 font-medium hover:text-green-600 transition duration-300"
+            >
+              Our Project
+            </a>
+                       {" "}
+            <a
+              href="#vision"
+              className="text-gray-700 font-medium hover:text-green-600 transition duration-300"
+            >
+              About Us
+            </a>
+                       {" "}
+            <a
+              href="#contact"
+              className="text-gray-700 font-medium hover:text-green-600 transition duration-300"
+            >
+              Contact
+            </a>
+                     {" "}
+          </div>
+                   {/* --- THIS DIV IS NOW ABSOLUTELY POSITIONED --- */}
+          <div className="hidden md:flex items-center gap-4 absolute right-0 top-1/2 -translate-y-1/2">
+            <a
+              href="/login"
+              className="text-gray-700 font-medium px-6 py-3 rounded-md hover:bg-gray-100 transition duration-300"
+            >
+              Login
+            </a>
+            <a
+              href="/login"
+              className="bg-green-600 text-white font-semibold px-6 py-3 rounded-md hover:bg-green-700 transition duration-300"
+            >
+              Report Issue
+            </a>
 
-          <div className="hidden md:flex items-center space-x-8">
-            <a href="#home" className="text-gray-700 font-medium hover:text-green-600 transition duration-300">Home</a>
-            <a href="#features" className="text-gray-700 font-medium hover:text-green-600 transition duration-300">Our Project</a>
-            <a href="#vision" className="text-gray-700 font-medium hover:text-green-600 transition duration-300">About Us</a>
-            <a href="#contact" className="text-gray-700 font-medium hover:text-green-600 transition duration-300">Contact</a>
-          </div>
-          
-          {/* --- THIS DIV IS NOW ABSOLUTELY POSITIONED --- */}
-          <div className="hidden md:flex items-center gap-4 absolute right-0 top-1/2 -translate-y-1/2">
-             <a href="/login" className="text-gray-700 font-medium px-6 py-3 rounded-md hover:bg-gray-100 transition duration-300">
-              Login
-            </a>
-            <a href="/login" className="bg-green-600 text-white font-semibold px-6 py-3 rounded-md hover:bg-green-700 transition duration-300">
-              Report Issue
-            </a>
-          </div>
-
-          {/* --- THIS DIV IS ALSO ABSOLUTELY POSITIONED --- */}
-          <div className="md:hidden flex items-center absolute right-0 top-1/2 -translate-y-1/2">
-            <button onClick={() => setIsOpen(!isOpen)} className="inline-flex items-center justify-center p-2 rounded-md text-gray-800 hover:text-green-600 focus:outline-none">
-              <span className="sr-only">Open main menu</span>
-              {isOpen ? <XIcon className="h-6 w-6" /> : <MenuIcon className="h-6 w-6" />}
-            </button>
-          </div>
-        </div>
-      </nav>
-
-      {/* The mobile dropdown menu is unaffected and remains the same */}
-      {isOpen && (
-        <div className="md:hidden bg-white">
-          <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 text-center">
-            <a href="#home" className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-green-600 hover:bg-gray-50">Home</a>
-            <a href="#features" className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-green-600 hover:bg-gray-50">Our Project</a>
-            <a href="#vision" className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-green-600 hover:bg-gray-50">About Us</a>
-            <a href="#contact" className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-green-600 hover:bg-gray-50">Contact</a>
-            <a href="/login" className="block w-full text-center mt-2 px-6 py-3 border border-green-600 text-green-600 rounded-md hover:bg-green-50 transition duration-300">Login</a>
-s          <a href="#" className="block w-full text-center mt-2 px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 transition duration-300">Report Issue</a>
-          </div>
-        </div>
-      )}
-    </header>
-  );
+            {/* ✅ Added Google Translate beside Report Issue */}
+            <div className="ml-2 relative z-50">
+              <GoogleTranslateLanding />
+            </div>
+          </div>
+          {/* --- THIS DIV IS ALSO ABSOLUTELY POSITIONED --- */}         {" "}
+          <div className="md:hidden flex items-center absolute right-0 top-1/2 -translate-y-1/2">
+                       {" "}
+            <button
+              onClick={() => setIsOpen(!isOpen)}
+              className="inline-flex items-center justify-center p-2 rounded-md text-gray-800 hover:text-green-600 focus:outline-none"
+            >
+                            <span className="sr-only">Open main menu</span>     
+                     {" "}
+              {isOpen ? (
+                <XIcon className="h-6 w-6" />
+              ) : (
+                <MenuIcon className="h-6 w-6" />
+              )}
+                         {" "}
+            </button>
+                     {" "}
+          </div>
+                 {" "}
+        </div>
+             {" "}
+      </nav>
+      {/* The mobile dropdown menu is unaffected and remains the same */}     {" "}
+      {isOpen && (
+        <div className="md:hidden bg-white">
+                   {" "}
+          <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3 text-center">
+                       {" "}
+            <a
+              href="#home"
+              className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-green-600 hover:bg-gray-50"
+            >
+              Home
+            </a>
+           {" "}
+            <a
+              href="#features"
+              className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-green-600 hover:bg-gray-50"
+            >
+              Our Project
+            </a>
+    {" "}
+            <a
+              href="#vision"
+              className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-green-600 hover:bg-gray-50"
+            >
+              About Us
+            </a>
+                       {" "}
+            <a
+              href="#contact"
+              className="block px-3 py-2 rounded-md text-base font-medium text-gray-700 hover:text-green-600 hover:bg-gray-50"
+            >
+              Contact
+            </a>
+                       {" "}
+            <a
+              href="/login"
+              className="block w-full text-center mt-2 px-6 py-3 border border-green-600 text-green-600 rounded-md hover:bg-green-50 transition duration-300"
+            >
+              Login
+            </a>
+            s         {" "}
+            <a
+              href="#"
+              className="block w-full text-center mt-2 px-6 py-3 bg-green-600 text-white rounded-md hover:bg-green-700 transition duration-300"
+            >
+              Report Issue
+            </a>
+                     {" "}
+          </div>
+                 {" "}
+        </div>
+      )}
+         {" "}
+    </header>
+  );
 };
 const Hero = () => {
     const [currentSlide, setCurrentSlide] = useState(0);
@@ -253,6 +343,73 @@ const Stats = () => (
     </div>
 );
 
+const AboutUs = () => (
+  <section id="vision" className="py-20 bg-gray-900 text-white">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+      <h2 className="text-4xl font-bold mb-4">About Us</h2>
+      <p className="text-gray-400 mb-12 max-w-2xl mx-auto">
+        Meet the passionate team behind CIVIC, working together to make Bandra a
+        smarter and cleaner city.
+      </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8">
+        {/* Aryan Slaunke */}
+        <div className="flex flex-col items-center">
+          <img
+            src="https://i.pravatar.cc/150?img=12"
+            alt="Aryan Slaunke"
+            className="w-32 h-32 rounded-full object-cover mb-4 border-4 border-green-600"
+          />
+          <h4 className="text-xl font-semibold">Aryan Salunke</h4>
+          <p className="text-gray-400 text-center mt-1">
+            Machine Learning Engineer with expertise in predictive modeling.
+            Passionate about leveraging AI to solve real-world civic problems.
+          </p>
+        </div>
+        {/* Vedant Patil */}
+        <div className="flex flex-col items-center">
+          <img
+            src="https://i.pravatar.cc/150?img=14"
+            alt="Vedant Patil"
+            className="w-32 h-32 rounded-full object-cover mb-4 border-4 border-green-600"
+          />
+          <h4 className="text-xl font-semibold">Vedant Patil</h4>
+          <p className="text-gray-400 text-center mt-1">
+            Skilled ML Engineer focusing on computer vision and automation.
+            Enjoys creating models that enhance community engagement.
+          </p>
+        </div>
+        {/* Aryan Pathsk */}
+        <div className="flex flex-col items-center">
+          <img
+            src="https://i.pravatar.cc/150?img=16"
+            alt="Aryan Pathsk"
+            className="w-32 h-32 rounded-full object-cover mb-4 border-4 border-green-600"
+          />
+          <h4 className="text-xl font-semibold">Aryan Pathak</h4>
+          <p className="text-gray-400 text-center mt-1">
+            Mobile App Developer building intuitive and user-friendly
+            interfaces. Passionate about enhancing citizen experience through
+            apps.
+          </p>
+        </div>
+        {/* Omkar Raut */}
+        <div className="flex flex-col items-center">
+          <img
+            src="https://i.pravatar.cc/150?img=18"
+            alt="Omkar Raut"
+            className="w-32 h-32 rounded-full object-cover mb-4 border-4 border-green-600"
+          />
+          <h4 className="text-xl font-semibold">Omkar Raut</h4>
+          <p className="text-gray-400 text-center mt-1">
+            Web Developer specializing in full-stack solutions. Loves creating
+            robust and responsive platforms for civic engagement.
+          </p>
+        </div>
+      </div>
+    </div>
+  </section>
+);
+
 
 const HowItWorks = () => (
   <section id="how-it-works" className="py-20 bg-gray-800 text-white">
@@ -359,6 +516,11 @@ const Footer = () => (
 
 
 export default function LandingPage() {
+    const [showChatModal, setShowChatModal] = useState(false);
+
+    const handleOpenChat = () => setShowChatModal(true);
+    const handleCloseChat = () => setShowChatModal(false);
+
   return (
     <div className="bg-gray-900 font-sans">
       <Header />
@@ -367,8 +529,59 @@ export default function LandingPage() {
         <WhyCivic />
         <Stats />
         <HowItWorks />
+        <AboutUs />
+        {/* Floating Buttons - Chatbot + Translate */}
+        <div className="fixed bottom-6 right-6 flex flex-col gap-3 z-50">
+          {/* Chatbot Floating Button */}
+          <button
+            onClick={handleOpenChat}
+            className="w-14 h-14 flex items-center justify-center bg-gradient-to-br from-blue-500 to-purple-600 text-white rounded-full shadow-lg hover:scale-105 transition-transform"
+            aria-label="Open Civic Assistant"
+          >
+            <svg
+              viewBox="0 0 32 32"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6"
+            >
+              <rect
+                x="6"
+                y="10"
+                width="20"
+                height="12"
+                rx="6"
+                stroke="#20E0E0"
+                strokeWidth="2"
+              />
+              <rect
+                x="2"
+                y="15"
+                width="4"
+                height="4"
+                rx="1"
+                stroke="#20E0E0"
+                strokeWidth="2"
+              />
+              <rect
+                x="26"
+                y="15"
+                width="4"
+                height="4"
+                rx="1"
+                stroke="#20E0E0"
+                strokeWidth="2"
+              />
+              <rect x="11" y="15" width="2" height="4" rx="1" fill="#20E0E0" />
+              <rect x="19" y="15" width="2" height="4" rx="1" fill="#20E0E0" />
+              <rect x="15" y="6" width="2" height="6" rx="1" fill="#20E0E0" />
+            </svg>
+          </button>
+        </div>
+        {/* Chat Modal */}
+        {showChatModal && <ChatBotModal onClose={handleCloseChat} />}
       </main>
+
       <Footer />
     </div>
-  )
+  );
 }

@@ -4,7 +4,7 @@ import Chatbot from './ChatBot'; // Import the chatbot component
 export default function ChatModal({ onClose }) {
   const modalRef = useRef(null);
 
-  // Close dropdown when clicking outside
+  // Close dropdown when clicking outside -:
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (modalRef.current && !modalRef.current.contains(event.target)) {

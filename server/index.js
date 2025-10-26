@@ -18,6 +18,7 @@ import transferRoutes from "./routes/transfer.js"; // ✅ Import transfer routes
 import officerAnalyticsRoutes from "./routes/officerAnalytics.js";
 import citizenRoutes from "./routes/citizenAnalytics.js";
 import qrCodeRoutes from "./routes/qrCode.js";
+import chatBotRoute from "./routes/chatBot.js"
 
 dotenv.config({ path: "./.env" });
 
@@ -46,6 +47,7 @@ app.use("/api/transfer", transferRoutes); // ✅ Register transfer routes
 app.use("/api/officer", officerAnalyticsRoutes);
 app.use("/api/citizen", citizenRoutes);
 app.use("/api/qr", qrCodeRoutes);
+app.use("/api/chat", chatBotRoute)
 
 // Health check
 app.get("/", (req, res) => res.json({ message: "Server is working 🚀" }));
