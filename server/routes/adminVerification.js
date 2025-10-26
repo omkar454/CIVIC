@@ -100,11 +100,11 @@ router.post("/:id/verify", auth("admin"), async (req, res) => {
       }
     } else {
       // Admin rejected
-      report.status = "Open";
+      report.status = "Rejected";
       verification.verified = false;
 
       report.statusHistory.push({
-        status: "Open",
+        status: "Rejected",
         by: req.user._id,
         note: `Admin rejected citizen report: ${note || "No note provided"}`,
         at: new Date(),

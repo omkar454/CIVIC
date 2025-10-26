@@ -461,10 +461,11 @@ router.post("/verify-report/:id", auth("admin"), async (req, res) => {
     // Update status based on admin decision
     if (approve) {
       report.status = currentPending === "Resolved" ? "Resolved" : "Rejected";
-    } else {
+    } 
+    /* else {
       report.status = "Rejected (by Admin)";
       report.assignedTo = null; // optional: unassign officer if rejected
-    }
+    } */
 
     // Clear pendingStatus after verification
     report.pendingStatus = null;

@@ -486,7 +486,7 @@ const generateQRCode = async () => {
 
       {role === "admin" &&
         report.pendingStatus &&
-        report.adminVerification?.verified === null && (
+        (report.adminVerification?.verified === null || report.adminVerification?.verified === false) && (
           <div className="bg-yellow-50 dark:bg-yellow-900 p-4 rounded-xl shadow-lg space-y-3">
             <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
               Admin Verification Required

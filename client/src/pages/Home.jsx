@@ -303,11 +303,45 @@ useEffect(() => {
               .filter((r) => r.lat && r.lng)
               .map((r) => (
                 <Marker key={r._id} position={[r.lat, r.lng]} icon={redIcon}>
-                  <Popup>
-                    <strong>{r.title}</strong>
-                    <br />
-                    Category: {r.category} | Status: {r.status} | Severity:{" "}
-                    {r.severity}
+                  <Popup minWidth={250}>
+                    <div className="text-sm">
+                      <strong className="text-base text-blue-700">
+                        {r.title}
+                      </strong>
+                      <br />
+                      <span className="block mt-1 text-gray-700 dark:text-gray-200">
+                        <strong>Category:</strong> {r.category}
+                      </span>
+                      <span className="block text-gray-700 dark:text-gray-200">
+                        <strong>Status:</strong> {r.status}
+                      </span>
+                      <span className="block text-gray-700 dark:text-gray-200">
+                        <strong>Severity:</strong> {r.severity}
+                      </span>
+                      <span className="block text-gray-700 dark:text-gray-200">
+                        <strong>Department:</strong> {r.department || "N/A"}
+                      </span>
+                      <span className="block text-gray-700 dark:text-gray-200">
+                        <strong>Reporter:</strong>{" "}
+                        {r.reporter?.name || "Unknown"}
+                      </span>
+                      <span className="block text-gray-700 dark:text-gray-200">
+                        <strong>Created:</strong>{" "}
+                        {new Date(r.createdAt).toLocaleDateString()}
+                      </span>
+                      <span className="block text-gray-700 dark:text-gray-200 mb-2">
+                        <strong>Description:</strong>{" "}
+                        {r.description?.slice(0, 80) || "No description"}
+                        {r.description?.length > 80 && "..."}
+                      </span>
+
+                      <Link
+                        to={`/reports/${r._id}`}
+                        className="text-blue-600 hover:underline font-medium"
+                      >
+                        🔍 View Details
+                      </Link>
+                    </div>
                   </Popup>
                 </Marker>
               ))}
@@ -443,61 +477,153 @@ useEffect(() => {
       {/* Citizens */}
       {role === "citizen" && (
         <div className="mb-6 grid md:grid-cols-2 gap-4">
-          {/* Approved / Resolved Complaints */}
-          <div className="bg-green-50 dark:bg-green-900 p-4 rounded shadow">
-            <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">
-              Approved / Resolved Complaints
-            </h3>
-            {reports.filter((r) => r.adminVerification?.verified === true)
-              .length === 0 ? (
-              <p className="text-gray-600 dark:text-gray-400">
-                No approved reports.
-              </p>
-            ) : (
-              <ul className="list-disc list-inside text-gray-700 dark:text-gray-300">
-                {reports
-                  .filter((r) => r.adminVerification?.verified === true)
-                  .map((r) => (
-                    <li key={r._id}>
-                      <strong>{r.title}</strong> - Note:{" "}
-                      {r.adminVerification.note || "No note"}
-                    </li>
-                  ))}
-              </ul>
-            )}
+          {/* Top Row */}
+          <div className="grid grid-cols-2 gap-4">
+            {/* Approved Reports by Admin */}
+            <div className="bg-green-50 dark:bg-green-900 p-4 rounded shadow h-64 overflow-y-auto">
+              <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">
+                Approved Reports by Admin
+              </h3>
+              {reports.filter(
+                (r) =>
+                  r.citizenAdminVerification?.verified === true &&
+                  r.status !== "Resolved" &&
+                  r.status !== "Rejected"
+              ).length === 0 ? (
+                <p className="text-gray-600 dark:text-gray-400">
+                  No approved reports by admin.
+                </p>
+              ) : (
+                <ul className="list-disc list-inside text-gray-700 dark:text-gray-300">
+                  {reports
+                    .filter(
+                      (r) =>
+                        r.citizenAdminVerification?.verified === true &&
+                        r.status !== "Resolved" &&
+                        r.status !== "Rejected"
+                    )
+                    .map((r) => (
+                      <li key={r._id} className="mb-1">
+                        <Link
+                          to={`/reports/${r._id}`}
+                          className="text-blue-600 dark:text-blue-400 hover:underline"
+                        >
+                          {r.title}
+                        </Link>{" "}
+                        - Status: {r.status} | Admin Note:{" "}
+                        {r.citizenAdminVerification?.note || "No note"}
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Rejected Reports by Admin */}
+            <div className="bg-red-50 dark:bg-red-900 p-4 rounded shadow h-64 overflow-y-auto">
+              <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">
+                Rejected Reports by Admin
+              </h3>
+              {reports.filter(
+                (r) => r.citizenAdminVerification?.verified === false
+              ).length === 0 ? (
+                <p className="text-gray-600 dark:text-gray-400">
+                  No rejected reports by admin.
+                </p>
+              ) : (
+                <ul className="list-disc list-inside text-gray-700 dark:text-gray-300">
+                  {reports
+                    .filter(
+                      (r) => r.citizenAdminVerification?.verified === false
+                    )
+                    .map((r) => (
+                      <li key={r._id} className="mb-1">
+                        <Link
+                          to={`/reports/${r._id}`}
+                          className="text-blue-600 dark:text-blue-400 hover:underline"
+                        >
+                          {r.title}
+                        </Link>{" "}
+                        - Admin Note:{" "}
+                        {r.citizenAdminVerification?.note || "No note"}
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
           </div>
 
-          {/* Rejected Complaints */}
-          <div className="bg-red-50 dark:bg-red-900 p-4 rounded shadow">
-            <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">
-              Rejected Complaints
-            </h3>
-            {reports.filter((r) => r.adminVerification?.verified === false)
-              .length === 0 ? (
-              <p className="text-gray-600 dark:text-gray-400">
-                No rejected reports.
-              </p>
-            ) : (
-              <ul className="list-disc list-inside text-gray-700 dark:text-gray-300">
-                {reports
-                  .filter((r) => r.adminVerification?.verified === false)
-                  .map((r) => (
-                    <li key={r._id}>
-                      <strong>{r.title}</strong> - Note:{" "}
-                      {r.adminVerification.note || "No note"}
-                    </li>
-                  ))}
-              </ul>
-            )}
+          {/* Bottom Row */}
+          <div className="grid grid-cols-2 gap-4">
+            {/* Resolved Reports */}
+            <div className="bg-blue-50 dark:bg-blue-900 p-4 rounded shadow h-64 overflow-y-auto">
+              <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">
+                Resolved Reports
+              </h3>
+              {reports.filter((r) => r.status === "Resolved").length === 0 ? (
+                <p className="text-gray-600 dark:text-gray-400">
+                  No resolved reports.
+                </p>
+              ) : (
+                <ul className="list-disc list-inside text-gray-700 dark:text-gray-300">
+                  {reports
+                    .filter((r) => r.status === "Resolved")
+                    .map((r) => (
+                      <li key={r._id} className="mb-1">
+                        <Link
+                          to={`/reports/${r._id}`}
+                          className="text-blue-600 dark:text-blue-400 hover:underline"
+                        >
+                          {r.title}
+                        </Link>{" "}
+                        - Resolved on:{" "}
+                        {r.updatedAt
+                          ? new Date(r.updatedAt).toLocaleDateString()
+                          : "N/A"}
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
+
+            {/* Rejected Reports by Officer */}
+            <div className="bg-red-100 dark:bg-red-800 p-4 rounded shadow h-64 overflow-y-auto">
+              <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">
+                Rejected Reports by Officer
+              </h3>
+              {reports.filter((r) => r.status === "Rejected").length === 0 ? (
+                <p className="text-gray-600 dark:text-gray-400">
+                  No rejected reports by officer.
+                </p>
+              ) : (
+                <ul className="list-disc list-inside text-gray-700 dark:text-gray-300">
+                  {reports
+                    .filter((r) => r.status === "Rejected")
+                    .map((r) => (
+                      <li key={r._id} className="mb-1">
+                        <Link
+                          to={`/reports/${r._id}`}
+                          className="text-blue-600 dark:text-blue-400 hover:underline"
+                        >
+                          {r.title}
+                        </Link>{" "}
+                        - Rejected on:{" "}
+                        {r.updatedAt
+                          ? new Date(r.updatedAt).toLocaleDateString()
+                          : "N/A"}
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
           </div>
         </div>
       )}
 
       {/* Officers */}
       {role === "officer" && (
-        <div className="mb-6 grid md:grid-cols-2 gap-4">
+        <div className="mb-6 grid md:grid-cols-3 gap-4">
           {/* Awaiting Admin Approval */}
-          <div className="bg-yellow-50 dark:bg-yellow-900 p-4 rounded shadow">
+          <div className="bg-yellow-50 dark:bg-yellow-900 p-4 rounded shadow h-64 overflow-y-auto">
             <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">
               Awaiting Admin Approval
             </h3>
@@ -518,9 +644,15 @@ useEffect(() => {
                       r.adminVerification?.verified === null
                   )
                   .map((r) => (
-                    <li key={r._id}>
-                      <strong>{r.title}</strong> - Status: {r.status} | Admin
-                      Note: {r.adminVerification?.note || "No note"}
+                    <li key={r._id} className="mb-1">
+                      <Link
+                        to={`/reports/${r._id}`}
+                        className="text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        {r.title}
+                      </Link>{" "}
+                      - Status: {r.status} | Admin Note:{" "}
+                      {r.adminVerification?.note || "No note"}
                     </li>
                   ))}
               </ul>
@@ -528,9 +660,9 @@ useEffect(() => {
           </div>
 
           {/* Reports Admin Verified */}
-          <div className="bg-blue-50 dark:bg-blue-900 p-4 rounded shadow">
+          <div className="bg-blue-50 dark:bg-blue-900 p-4 rounded shadow h-64 overflow-y-auto">
             <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">
-              Reports Admin Verified
+              Reports Admin Verified and Approved 
             </h3>
             {reports.filter((r) => r.adminVerification?.verified === true)
               .length === 0 ? (
@@ -542,9 +674,45 @@ useEffect(() => {
                 {reports
                   .filter((r) => r.adminVerification?.verified === true)
                   .map((r) => (
-                    <li key={r._id}>
-                      <strong>{r.title}</strong> - Status: {r.status} | Admin
-                      Note: {r.adminVerification?.note || "No note"}
+                    <li key={r._id} className="mb-1">
+                      <Link
+                        to={`/reports/${r._id}`}
+                        className="text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        {r.title}
+                      </Link>{" "}
+                      - Status: {r.status} | Admin Note:{" "}
+                      {r.adminVerification?.note || "No note"}
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </div>
+
+          {/* Admin Rejected Reports */}
+          <div className="bg-red-50 dark:bg-red-900 p-4 rounded shadow h-64 overflow-y-auto">
+            <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">
+              Admin Rejected Reports
+            </h3>
+            {reports.filter((r) => r.adminVerification?.verified === false)
+              .length === 0 ? (
+              <p className="text-gray-600 dark:text-gray-400">
+                No admin-rejected reports.
+              </p>
+            ) : (
+              <ul className="list-disc list-inside text-gray-700 dark:text-gray-300">
+                {reports
+                  .filter((r) => r.adminVerification?.verified === false)
+                  .map((r) => (
+                    <li key={r._id} className="mb-1">
+                      <Link
+                        to={`/reports/${r._id}`}
+                        className="text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        {r.title}
+                      </Link>{" "}
+                      - Status: {r.status} | Admin Note:{" "}
+                      {r.adminVerification?.note || "No note"}
                     </li>
                   ))}
               </ul>
@@ -558,15 +726,22 @@ useEffect(() => {
           <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">
             Pending Verifications
           </h3>
-          {reports.filter((r) => r.adminVerification?.verified === null)
-            .length === 0 ? (
+          {reports.filter(
+            (r) =>
+              r.adminVerification?.verified === null ||
+              r.adminVerification?.verified === false
+          ).length === 0 ? (
             <p className="text-gray-600 dark:text-gray-400">
               No pending verifications.
             </p>
           ) : (
             <ul className="list-disc list-inside text-gray-700 dark:text-gray-300">
               {reports
-                .filter((r) => r.adminVerification?.verified === null)
+                .filter(
+                  (r) =>
+                    r.adminVerification?.verified === null ||
+                    r.adminVerification?.verified === false
+                )
                 .map((r) => (
                   <li key={r._id} className="mb-2">
                     <Link
