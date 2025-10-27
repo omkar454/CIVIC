@@ -609,7 +609,7 @@ const generateQRCode = async () => {
           </h2>
 
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Field officers or citizens can scan this QR code to verify the
+            Field officers or citizens or admin can scan this QR code to verify the
             report’s authenticity and view live updates.
           </p>
 

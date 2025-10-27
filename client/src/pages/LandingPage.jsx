@@ -5,6 +5,10 @@ import Image3 from '../assets/image3.jpeg';
 import Image4 from '../assets/hero1.jpeg';
 import imagebg from '../assets/imagebg.jpg';
 import Image5 from '../assets/image5.jpeg';
+import aryanSalunke from '../assets/aryanSalunke.jpg'
+import aryanPathak from '../assets/aryanPathak.jpg'
+import vedantPatil from '../assets/vedantPatil.jpg'
+import omkarRaut from "../assets/omkarRaut.jpg"
 
 import ChatBotModal from "../components/ChatBotModal";
 import GoogleTranslateLanding from "../components/GoogleTranslateLanding";
@@ -351,56 +355,58 @@ const AboutUs = () => (
         Meet the passionate team behind CIVIC, working together to make Bandra a
         smarter and cleaner city.
       </p>
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-8">
-        {/* Aryan Slaunke */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-10">
+        {/* Aryan Salunke */}
         <div className="flex flex-col items-center">
           <img
-            src="https://i.pravatar.cc/150?img=12"
-            alt="Aryan Slaunke"
-            className="w-32 h-32 rounded-full object-cover mb-4 border-4 border-green-600"
+            src={aryanSalunke}
+            alt="Aryan Salunke"
+            className="w-44 h-44 sm:w-48 sm:h-48 rounded-full object-cover mb-4 border-4 border-green-600 shadow-lg"
           />
           <h4 className="text-xl font-semibold">Aryan Salunke</h4>
-          <p className="text-gray-400 text-center mt-1">
+          <p className="text-gray-400 text-center mt-2 px-3">
             Machine Learning Engineer with expertise in predictive modeling.
             Passionate about leveraging AI to solve real-world civic problems.
           </p>
         </div>
+
         {/* Vedant Patil */}
         <div className="flex flex-col items-center">
           <img
-            src="https://i.pravatar.cc/150?img=14"
+            src={vedantPatil}
             alt="Vedant Patil"
-            className="w-32 h-32 rounded-full object-cover mb-4 border-4 border-green-600"
+            className="w-44 h-44 sm:w-48 sm:h-48 rounded-full object-cover mb-4 border-4 border-green-600 shadow-lg"
           />
           <h4 className="text-xl font-semibold">Vedant Patil</h4>
-          <p className="text-gray-400 text-center mt-1">
+          <p className="text-gray-400 text-center mt-2 px-3">
             Skilled ML Engineer focusing on computer vision and automation.
             Enjoys creating models that enhance community engagement.
           </p>
         </div>
-        {/* Aryan Pathsk */}
+
+        {/* Aryan Pathak */}
         <div className="flex flex-col items-center">
           <img
-            src="https://i.pravatar.cc/150?img=16"
-            alt="Aryan Pathsk"
-            className="w-32 h-32 rounded-full object-cover mb-4 border-4 border-green-600"
+            src={aryanPathak}
+            alt="Aryan Pathak"
+            className="w-44 h-44 sm:w-48 sm:h-48 rounded-full object-cover mb-4 border-4 border-green-600 shadow-lg"
           />
           <h4 className="text-xl font-semibold">Aryan Pathak</h4>
-          <p className="text-gray-400 text-center mt-1">
-            Mobile App Developer building intuitive and user-friendly
-            interfaces. Passionate about enhancing citizen experience through
-            apps.
+          <p className="text-gray-400 text-center mt-2 px-3">
+            Mobile App Developer building intuitive and user-friendly interfaces.
+            Passionate about enhancing citizen experience through apps.
           </p>
         </div>
+
         {/* Omkar Raut */}
         <div className="flex flex-col items-center">
           <img
-            src="https://i.pravatar.cc/150?img=18"
+            src={omkarRaut}
             alt="Omkar Raut"
-            className="w-32 h-32 rounded-full object-cover mb-4 border-4 border-green-600"
+            className="w-44 h-44 sm:w-48 sm:h-48 rounded-full object-cover mb-4 border-4 border-green-600 shadow-lg"
           />
           <h4 className="text-xl font-semibold">Omkar Raut</h4>
-          <p className="text-gray-400 text-center mt-1">
+          <p className="text-gray-400 text-center mt-2 px-3">
             Web Developer specializing in full-stack solutions. Loves creating
             robust and responsive platforms for civic engagement.
           </p>
