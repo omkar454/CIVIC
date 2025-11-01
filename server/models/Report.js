@@ -113,7 +113,8 @@ const ReportSchema = new mongoose.Schema(
         type: [Number],
         validate: {
           validator: function (v) {
-            if ((!v || v.length === 0) && this.address?.trim() !== "") return true;
+            if ((!v || v.length === 0) && this.address?.trim() !== "")
+              return true;
             return (
               Array.isArray(v) &&
               v.length === 2 &&
@@ -150,6 +151,15 @@ const ReportSchema = new mongoose.Schema(
     statusHistory: [StatusHistorySchema],
     comments: [CommentSchema],
     priorityScore: { type: Number, default: 0 },
+    // 🔹 SLA Tracking Fields
+    slaDays: { type: Number, default: null }, // Calculated from priority
+    slaStartDate: { type: Date, default: null }, // Starts when assigned/acknowledged
+    slaEndDate: { type: Date, default: null }, // When resolved/rejected
+    slaStatus: {
+      type: String,
+      enum: ["Pending", "On Time", "Overdue", null],
+      default: "Pending",
+    },
     questionToOfficer: { type: String, default: "" },
     officerProofMedia: [{ url: String, mime: String }],
 
@@ -161,12 +171,45 @@ const ReportSchema = new mongoose.Schema(
 
 ReportSchema.index({ location: "2dsphere" });
 
-// 🔹 Only calculate priorityScore if severity exists
+// 🔹 Calculate Priority and SLA Logic
 ReportSchema.pre("save", function (next) {
-  const severity = this.severity !== null && this.severity !== undefined ? this.severity : 0;
+  const severity = this.severity ?? 0;
   const votes = this.votes || 0;
   this.priorityScore = severity ? severity * 10 + votes * 5 : votes * 5;
+
+  // 🕒 SLA Days based on Priority (adjust as needed)
+  if (this.priorityScore >= 60) this.slaDays = 2; // high urgency
+  else if (this.priorityScore >= 30) this.slaDays = 4; // medium
+  else this.slaDays = 7; // low
+
+  // 🚫 Stop SLA for resolved/rejected
+  if (["Resolved", "Rejected"].includes(this.status)) {
+    this.slaEndDate = this.slaEndDate || new Date();
+    this.slaStatus = this.slaStatus === "Overdue" ? "Overdue" : "On Time";
+  }
+
+  // 🕓 Start SLA when acknowledged or in progress
+  if (
+    ["Acknowledged", "In Progress"].includes(this.status) &&
+    !this.slaStartDate
+  ) {
+    this.slaStartDate = new Date();
+  }
+
+  // ⏱️ If still pending, check if overdue
+  if (
+    this.slaStartDate &&
+    !this.slaEndDate &&
+    ["Acknowledged", "In Progress"].includes(this.status)
+  ) {
+    const diffDays = Math.floor(
+      (Date.now() - this.slaStartDate.getTime()) / (1000 * 60 * 60 * 24)
+    );
+    this.slaStatus = diffDays > this.slaDays ? "Overdue" : "Pending";
+  }
+
   next();
 });
+
 
 export default mongoose.model("Report", ReportSchema);

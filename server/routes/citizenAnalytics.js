@@ -13,9 +13,11 @@ router.get("/analytics", auth("citizen"), async (req, res) => {
   try {
     const citizenId = req.user.id;
 
-    // ✅ Correct field: reporter (not user)
-    const reports = await Report.find({ reporter: citizenId });
-    const textReports = await TextAddressReport.find({ reporter: citizenId });
+    const [reports, textReports] = await Promise.all([
+      Report.find({ reporter: citizenId }),
+      TextAddressReport.find({ reporter: citizenId }),
+    ]);
+
     const allReports = [...reports, ...textReports];
 
     if (allReports.length === 0) {
@@ -26,7 +28,7 @@ router.get("/analytics", auth("citizen"), async (req, res) => {
       });
     }
 
-    // 📊 Complaint Trends (month-wise)
+    /* --------------------- 📈 Complaint Trends --------------------- */
     const monthlyCounts = {};
     allReports.forEach((r) => {
       const createdAt = new Date(r.createdAt);
@@ -36,11 +38,17 @@ router.get("/analytics", auth("citizen"), async (req, res) => {
       monthlyCounts[key] = (monthlyCounts[key] || 0) + 1;
     });
 
+    // ✅ Sort chronologically (not alphabetically)
     const trendData = Object.entries(monthlyCounts)
-      .map(([month, count]) => ({ month, count }))
-      .sort((a, b) => new Date(a.month) - new Date(b.month));
+      .map(([month, count]) => ({
+        month,
+        count,
+        sortKey: new Date(`${month} 1, ${month.split(" ")[1] || new Date().getFullYear()}`),
+      }))
+      .sort((a, b) => a.sortKey - b.sortKey)
+      .map(({ month, count }) => ({ month, count }));
 
-    // 🟢 Status Breakdown
+    /* --------------------- 🥧 Status Breakdown --------------------- */
     const statusCounts = {
       Open: 0,
       Acknowledged: 0,
@@ -59,16 +67,16 @@ router.get("/analytics", auth("citizen"), async (req, res) => {
       ([status, count]) => ({ status, count })
     );
 
-    // ⏱️ Average Resolution Time
+    /* --------------------- ⏱️ Average Resolution Time --------------------- */
     const resolvedReports = allReports.filter(
-      (r) => r.status === "Resolved" && r.resolvedAt
+      (r) => r.status === "Resolved" && r.updatedAt
     );
 
     let avgResolutionTime = 0;
     if (resolvedReports.length > 0) {
       const totalDays = resolvedReports.reduce((sum, r) => {
         const created = new Date(r.createdAt);
-        const resolved = new Date(r.resolvedAt);
+        const resolved = new Date(r.updatedAt);
         return sum + (resolved - created) / (1000 * 60 * 60 * 24);
       }, 0);
       avgResolutionTime = (totalDays / resolvedReports.length).toFixed(1);
@@ -77,10 +85,10 @@ router.get("/analytics", auth("citizen"), async (req, res) => {
     res.json({
       trendData,
       statusBreakdown,
-      avgResolutionTime,
+      avgResolutionTime: parseFloat(avgResolutionTime),
     });
   } catch (error) {
-    console.error("Citizen Analytics Error:", error);
+    console.error("❌ Citizen Analytics Error:", error);
     res.status(500).json({ error: "Server error while fetching analytics." });
   }
 });
@@ -93,8 +101,11 @@ router.get("/performance-summary", auth("citizen"), async (req, res) => {
     const citizenId = req.user.id;
     const { period } = req.query; // "monthly" or "quarterly"
 
-    const reports = await Report.find({ reporter: citizenId });
-    const textReports = await TextAddressReport.find({ reporter: citizenId });
+    const [reports, textReports] = await Promise.all([
+      Report.find({ reporter: citizenId }),
+      TextAddressReport.find({ reporter: citizenId }),
+    ]);
+
     const allReports = [...reports, ...textReports];
 
     if (allReports.length === 0) {
@@ -124,13 +135,31 @@ router.get("/performance-summary", auth("citizen"), async (req, res) => {
       if (r.status === "Rejected") summaryMap[label].rejected++;
     });
 
+    // ✅ Sort summaries by actual date order
     const summary = Object.entries(summaryMap)
-      .map(([label, data]) => ({ label, ...data }))
-      .sort((a, b) => new Date(a.label) - new Date(b.label));
+      .map(([label, data]) => {
+        let sortKey;
+        if (period === "quarterly") {
+          const [q, year] = label.split(" ");
+          const quarter = Number(q.replace("Q", ""));
+          sortKey = new Date(`${year}-${(quarter - 1) * 3 + 1}-01`);
+        } else {
+          const [month, year] = label.split(" ");
+          sortKey = new Date(`${month} 1, ${year}`);
+        }
+        return { label, ...data, sortKey };
+      })
+      .sort((a, b) => a.sortKey - b.sortKey)
+      .map(({ label, total, resolved, rejected }) => ({
+        label,
+        total,
+        resolved,
+        rejected,
+      }));
 
     res.json({ summary });
   } catch (error) {
-    console.error("Citizen Performance Summary Error:", error);
+    console.error("❌ Citizen Performance Summary Error:", error);
     res.status(500).json({ error: "Server error while fetching summary." });
   }
 });

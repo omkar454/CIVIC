@@ -261,26 +261,19 @@ router.get("/analytics", auth("admin"), async (req, res) => {
 });
 
 // -----------------------------
-// Department insights (fixed)
+// Department Insights (Accurate with statusHistory)
 // -----------------------------
 router.get("/department-insights", auth("admin"), async (req, res) => {
   try {
-    // Fetch both geocoded and text reports
-    const reports = await Report.find();
-    const textReports = await TextAddressReport.find();
+    // Fetch all reports from both sources
+    const reports = await Report.find().lean();
+    const textReports = await TextAddressReport.find().lean();
 
-    // Merge all reports into one array
-    const allReports = [
-      ...reports.map(r => r.toObject()),
-      ...textReports.map(r => r.toObject())
-    ];
-
+    const allReports = [...reports, ...textReports];
     const departmentMap = {};
 
     allReports.forEach((r) => {
-      // Normalize department: trim spaces, default to "general" if missing
-      const deptRaw = r.department?.trim();
-      const dept = deptRaw && deptRaw.length > 0 ? deptRaw : "general";
+      const dept = (r.department?.trim() || "general").toLowerCase();
 
       if (!departmentMap[dept]) {
         departmentMap[dept] = {
@@ -294,37 +287,58 @@ router.get("/department-insights", auth("admin"), async (req, res) => {
 
       departmentMap[dept].totalReports += 1;
 
+      // ✅ Handle Resolved Reports
       if (r.status === "Resolved") {
         departmentMap[dept].resolved += 1;
-        if (r.resolvedAt) {
-          // Resolution time in days
-          departmentMap[dept].resolutionTimeSum +=
-            (new Date(r.resolvedAt) - new Date(r.createdAt)) /
+
+        // Find admin-approved resolution time from statusHistory
+        let resolvedAt = null;
+
+        if (Array.isArray(r.statusHistory)) {
+          const adminApproval = r.statusHistory.find(
+            (s) => s.status === "Resolved" && s.actorRole === ""
+          );
+          if (adminApproval?.at) resolvedAt = adminApproval.at;
+        }
+
+        // Fallback if not found: use updatedAt
+        if (!resolvedAt) resolvedAt = r.updatedAt;
+
+        if (resolvedAt && r.createdAt) {
+          const daysTaken =
+            (new Date(resolvedAt) - new Date(r.createdAt)) /
             (1000 * 60 * 60 * 24);
+          departmentMap[dept].resolutionTimeSum += Math.max(daysTaken, 0);
         }
       }
 
+      // ✅ Handle Rejected Reports
       if (r.status === "Rejected") {
         departmentMap[dept].rejected += 1;
       }
     });
 
-    // Convert map to array and calculate efficiency / average resolution
-    const departments = Object.values(departmentMap).map(d => ({
+    // Convert Map → Array
+    const departments = Object.values(departmentMap).map((d) => ({
       ...d,
-      efficiencyPct: d.totalReports ? (d.resolved / d.totalReports) * 100 : 0,
-      avgResolutionDays: d.resolved ? d.resolutionTimeSum / d.resolved : 0,
+      efficiencyPct: d.totalReports
+        ? ((d.resolved / d.totalReports) * 100).toFixed(2)
+        : "0.00",
+      avgResolutionDays: d.resolved
+        ? (d.resolutionTimeSum / d.resolved).toFixed(2)
+        : "0.00",
     }));
 
-    // Optional: log to debug
-    console.log("Department Insights:", departments);
+    console.log("✅ Department Insights:", departments);
 
     res.json({ departments });
   } catch (err) {
-    console.error("Department insights error:", err);
+    console.error("❌ Department insights error:", err);
     res.status(500).json({ message: "Failed to fetch department insights" });
   }
 });
+
+
 
 
 // -----------------------------
@@ -359,69 +373,63 @@ router.get("/department-trends", auth("admin"), async (req, res) => {
   }
 });
 
-// -----------------------------
-// Monthly / Quarterly performance summary
-// -----------------------------
-router.get("/performance-summary", auth("admin"), async (req, res) => {
+// routes/adminRoutes.js
+
+router.get("/performance-summary", async (req, res) => {
   try {
-    const { period = "month", year, month, quarter } = req.query;
-    let startDate, endDate;
+    const { period, year, month } = req.query;
 
-    if (period === "month" && year && month) {
-      startDate = new Date(year, month - 1, 1);
-      endDate = new Date(year, month, 0, 23, 59, 59, 999);
-    } else if (period === "quarter" && year && quarter) {
-      const startMonth = (quarter - 1) * 3;
-      startDate = new Date(year, startMonth, 1);
-      endDate = new Date(year, startMonth + 3, 0, 23, 59, 59, 999);
-    } else {
-      return res.status(400).json({ message: "Invalid period parameters" });
-    }
+    // ✅ Convert to numbers safely
+    const selectedYear = parseInt(year);
+    const selectedMonth = parseInt(month);
 
-    const reports = await Report.find({
-      createdAt: { $gte: startDate, $lte: endDate },
-    });
-    const textReports = await TextAddressReport.find({
-      createdAt: { $gte: startDate, $lte: endDate },
-    });
-    const allReports = [...reports, ...textReports];
+    // ✅ Define time range for the month
+    const startOfMonth = new Date(selectedYear, selectedMonth - 1, 1);
+    const endOfMonth = new Date(selectedYear, selectedMonth, 1);
 
-    const departmentMap = {};
-    allReports.forEach((r) => {
-      const dept = r.department || "general";
-      if (!departmentMap[dept]) {
-        departmentMap[dept] = {
-          department: dept,
-          total: 0,
-          resolved: 0,
-          rejected: 0,
-          resolutionTimeSum: 0,
-        };
-      }
-      departmentMap[dept].total += 1;
-      if (r.status === "Resolved") {
-        departmentMap[dept].resolved += 1;
-        if (r.resolvedAt) {
-          departmentMap[dept].resolutionTimeSum +=
-            (new Date(r.resolvedAt) - new Date(r.createdAt)) /
-            (1000 * 60 * 60 * 24);
-        }
-      }
-      if (r.status === "Rejected") departmentMap[dept].rejected += 1;
-    });
-
-    const summary = Object.values(departmentMap).map((d) => ({
-      ...d,
-      efficiencyPct: d.total ? (d.resolved / d.total) * 100 : 0,
-      avgResolutionDays: d.resolved ? d.resolutionTimeSum / d.resolved : 0,
-    }));
+    // ✅ Aggregate complaints grouped by department
+    const summary = await Complaint.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startOfMonth, $lt: endOfMonth },
+        },
+      },
+      {
+        $group: {
+          _id: "$department",
+          total: { $sum: 1 },
+          resolved: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "resolved"] }, 1, 0],
+            },
+          },
+          rejected: {
+            $sum: {
+              $cond: [{ $eq: ["$status", "rejected"] }, 1, 0],
+            },
+          },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          department: "$_id",
+          total: 1,
+          resolved: 1,
+          rejected: 1,
+        },
+      },
+      { $sort: { department: 1 } },
+    ]);
 
     res.json({ summary });
   } catch (err) {
     console.error("Performance summary error:", err);
-    res.status(500).json({ message: "Failed to fetch performance summary" });
+    res.status(500).json({ error: "Server error in performance summary" });
   }
 });
+
+
 
 // -----------------------------
 // Admin verifies officer-updated report
@@ -466,6 +474,19 @@ router.post("/verify-report/:id", auth("admin"), async (req, res) => {
       report.status = "Rejected (by Admin)";
       report.assignedTo = null; // optional: unassign officer if rejected
     } */
+   
+// 🕓 SLA Handling for Resolved/Rejected
+if (report.status === "Resolved" || report.status === "Rejected") {
+  report.slaEndDate = new Date();
+  if (report.slaStartDate && report.slaDays) {
+    const diffDays = Math.floor(
+      (report.slaEndDate - report.slaStartDate) / (1000 * 60 * 60 * 24)
+    );
+    report.slaStatus = diffDays > report.slaDays ? "Overdue" : "On Time";
+  } else {
+    report.slaStatus = "On Time";
+  }
+}
 
     // Clear pendingStatus after verification
     report.pendingStatus = null;
@@ -508,6 +529,69 @@ router.post("/verify-report/:id", auth("admin"), async (req, res) => {
     });
   } catch (err) {
     console.error("Admin verify report error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.get("/sla-overdue-trend", auth("admin"), async (req, res) => {
+  try {
+    const now = new Date();
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(now.getMonth() - 6);
+
+    // Common aggregation pipeline (Monthly)
+    const pipeline = [
+      {
+        $match: {
+          slaStatus: "Overdue",
+          createdAt: { $gte: sixMonthsAgo },
+        },
+      },
+      {
+        $project: {
+          department: 1,
+          month: { $dateToString: { format: "%Y-%m", date: "$createdAt" } }, // Month-Year format
+        },
+      },
+      {
+        $group: {
+          _id: { department: "$department", month: "$month" },
+          overdueCount: { $sum: 1 },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          department: "$_id.department",
+          month: "$_id.month",
+          overdueCount: 1,
+        },
+      },
+      { $sort: { month: 1 } },
+    ];
+
+    // Run both aggregations (geo + text reports)
+    const [geoReports, textReports] = await Promise.all([
+      Report.aggregate(pipeline),
+      TextAddressReport.aggregate(pipeline),
+    ]);
+
+    // Merge and combine duplicates
+    const merged = [...geoReports, ...textReports];
+    const combined = merged.reduce((acc, curr) => {
+      const key = `${curr.department}-${curr.month}`;
+      acc[key] = acc[key]
+        ? {
+            ...acc[key],
+            overdueCount: acc[key].overdueCount + curr.overdueCount,
+          }
+        : curr;
+      return acc;
+    }, {});
+
+    res.json(Object.values(combined));
+  } catch (err) {
+    console.error("SLA Overdue Trend (Monthly) error:", err);
     res.status(500).json({ message: "Server error" });
   }
 });

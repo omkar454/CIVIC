@@ -662,7 +662,7 @@ useEffect(() => {
           {/* Reports Admin Verified */}
           <div className="bg-blue-50 dark:bg-blue-900 p-4 rounded shadow h-64 overflow-y-auto">
             <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">
-              Reports Admin Verified and Approved 
+              Reports Admin Verified and Approved
             </h3>
             {reports.filter((r) => r.adminVerification?.verified === true)
               .length === 0 ? (
@@ -713,6 +713,71 @@ useEffect(() => {
                       </Link>{" "}
                       - Status: {r.status} | Admin Note:{" "}
                       {r.adminVerification?.note || "No note"}
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </div>
+
+          {/* 🆕 Overdue / Escalated Reports */}
+          <div className="bg-orange-50 dark:bg-orange-900 p-4 rounded shadow h-64 overflow-y-auto">
+            <h3 className="font-semibold text-gray-800 dark:text-gray-200 mb-2">
+              Overdue / Escalated Reports (
+              {
+                reports.filter(
+                  (r) =>
+                    r.slaStatus === "Overdue" &&
+                    r.assignedTo?._id === userData?._id && // Officer’s own reports
+                    r.department === userDepartment // Officer’s own department
+                ).length
+              }
+              )
+            </h3>
+
+            {reports.filter(
+              (r) =>
+                r.slaStatus === "Overdue" &&
+                r.assignedTo?._id === userData?._id &&
+                r.department === userDepartment
+            ).length === 0 ? (
+              <p className="text-gray-600 dark:text-gray-400">
+                No overdue or escalated reports.
+              </p>
+            ) : (
+              <ul className="list-disc list-inside text-gray-700 dark:text-gray-300">
+                {reports
+                  .filter(
+                    (r) =>
+                      r.slaStatus === "Overdue" &&
+                      r.assignedTo?._id === userData?._id &&
+                      r.department === userDepartment
+                  )
+                  .map((r) => (
+                    <li key={r._id} className="mb-1">
+                      <Link
+                        to={`/reports/${r._id}`}
+                        className="text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        {r.title}
+                      </Link>{" "}
+                      - Status: {r.status}{" "}
+                      {r.slaDays && r.slaStartDate ? (
+                        <>
+                          | SLA: {r.slaDays} days | Overdue by{" "}
+                          {Math.max(
+                            0,
+                            Math.floor(
+                              (Date.now() -
+                                new Date(r.slaStartDate).getTime()) /
+                                (1000 * 60 * 60 * 24) -
+                                r.slaDays
+                            )
+                          )}{" "}
+                          day(s)
+                        </>
+                      ) : (
+                        "| SLA not started"
+                      )}
                     </li>
                   ))}
               </ul>

@@ -117,9 +117,7 @@ export default function OfficerQueue() {
       );
 
       let data = Array.isArray(res.data) ? res.data : [];
-      console.log("Fetched reports:", data);
 
-      // ------------------ Map & filter reports ------------------
       data = data
         .map((r) => ({
           ...r,
@@ -135,11 +133,12 @@ export default function OfficerQueue() {
         }))
         // ------------------ Filter based on transfer ------------------
         .filter((r) => {
-          // Hide reports that are pending transfer approval or already approved
-          if (r.transferRequested && (r.transferStatus === "pending" || r.transferStatus === "approved")) {
+          if (
+            r.transferRequested &&
+            (r.transferStatus === "pending" || r.transferStatus === "approved")
+          ) {
             return false;
           }
-          // Show rejected transfer back in queue
           return true;
         });
 
@@ -319,52 +318,111 @@ export default function OfficerQueue() {
 
       {/* ---------------- Queue Cards ---------------- */}
       {filteredReports.map((r) => (
-        <div key={r._id} className="bg-white shadow p-4 rounded space-y-2">
-          <h3 className="font-bold text-lg">{r.title}</h3>
-          <p>{r.description}</p>
-          <p className="text-sm text-gray-600">
-            Category: {r.category} | Department: {r.department} | Severity:{" "}
-            {r.severity} | Votes: {r.votes} | Priority: {r.priorityScore} |
-            Status: {r.status}
-          </p>
-          <p className="text-sm text-gray-500">
-            Reported by: {r.reporter?.name} ({r.reporter?.email})
-          </p>
-
-          {r.transferStatus === "rejected" && (
-            <p className="text-sm text-red-600">
-              Transfer rejected by admin: {r.transferAdminNote}
-            </p>
-          )}
-
-          {r.media?.length > 0 && (
-            <div className="flex flex-wrap gap-2">
-              {r.media.map((m, i) =>
-                m.mime.startsWith("image/") ? (
-                  <img
-                    key={i}
-                    src={m.url}
-                    alt="media"
-                    className="w-32 h-32 object-cover rounded border cursor-pointer"
-                    onClick={() => window.open(m.url, "_blank")}
-                  />
-                ) : (
-                  <video
-                    key={i}
-                    src={m.url}
-                    controls
-                    className="w-48 h-32 object-cover rounded border"
-                  />
-                )
-              )}
-            </div>
-          )}
-
-          <Link to={`/reports/${r._id}`} className="underline text-blue-600">
-            View Details & Update Status
-          </Link>
-        </div>
+        <ReportCard key={r._id} report={r} />
       ))}
     </div>
   );
 }
+
+/* ---------------- Subcomponent ---------------- */
+const ReportCard = ({ report: r }) => {
+  const [timeLeft, setTimeLeft] = useState("");
+  const [slaStatus, setSlaStatus] = useState("");
+
+  useEffect(() => {
+    if (!r.slaStartDate || !r.slaDays) return;
+    if (["Resolved", "Rejected", "Open"].includes(r.status)) {
+      setSlaStatus("N/A");
+      setTimeLeft("-");
+      return;
+    }
+
+    const endTime = new Date(r.slaStartDate);
+    endTime.setDate(endTime.getDate() + r.slaDays);
+
+    const timer = setInterval(() => {
+      const now = new Date();
+      const diff = endTime - now;
+
+      if (diff <= 0) {
+        clearInterval(timer);
+        setTimeLeft("00:00:00");
+        setSlaStatus("Breached");
+      } else {
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+        const secs = Math.floor((diff % (1000 * 60)) / 1000);
+        setTimeLeft(
+          `${hours.toString().padStart(2, "0")}:${mins
+            .toString()
+            .padStart(2, "0")}:${secs.toString().padStart(2, "0")}`
+        );
+        setSlaStatus("Active");
+      }
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [r.slaStartDate, r.slaDays, r.status]);
+
+  const slaColor =
+    slaStatus === "Active"
+      ? "text-green-600"
+      : slaStatus === "Breached"
+      ? "text-red-600"
+      : "text-gray-500";
+
+  return (
+    <div className="bg-white shadow p-4 rounded space-y-2">
+      <h3 className="font-bold text-lg">{r.title}</h3>
+      <p>{r.description}</p>
+      <p className="text-sm text-gray-600">
+        Category: {r.category} | Department: {r.department} | Severity:{" "}
+        {r.severity} | Votes: {r.votes} | Priority: {r.priorityScore} | Status:{" "}
+        {r.status}
+      </p>
+
+      <p className={`text-sm font-semibold ${slaColor}`}>
+        SLA Status: {slaStatus}{" "}
+        {slaStatus === "Active" && <span>⏳ {timeLeft} left</span>}
+        {slaStatus === "Breached" && <span> ⚠️ Deadline Passed</span>}
+      </p>
+
+      <p className="text-sm text-gray-500">
+        Reported by: {r.reporter?.name} ({r.reporter?.email})
+      </p>
+
+      {r.transferStatus === "rejected" && (
+        <p className="text-sm text-red-600">
+          Transfer rejected by admin: {r.transferAdminNote}
+        </p>
+      )}
+
+      {r.media?.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {r.media.map((m, i) =>
+            m.mime.startsWith("image/") ? (
+              <img
+                key={i}
+                src={m.url}
+                alt="media"
+                className="w-32 h-32 object-cover rounded border cursor-pointer"
+                onClick={() => window.open(m.url, "_blank")}
+              />
+            ) : (
+              <video
+                key={i}
+                src={m.url}
+                controls
+                className="w-48 h-32 object-cover rounded border"
+              />
+            )
+          )}
+        </div>
+      )}
+
+      <Link to={`/reports/${r._id}`} className="underline text-blue-600">
+        View Details & Update Status
+      </Link>
+    </div>
+  );
+};

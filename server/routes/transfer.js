@@ -150,7 +150,16 @@ router.post("/:transferId/verify", auth("admin"), async (req, res) => {
         report.category = newCategory;
         await report.save();
         updatedReport = report;
+        // 🕒 Reinitialize SLA when transfer is approved
+        report.slaStartDate = new Date();
+        if (report.priorityScore >= 60) report.slaDays = 2;
+        else if (report.priorityScore >= 30) report.slaDays = 4;
+        else report.slaDays = 7;
+        report.slaStatus = "Pending";
+        report.slaEndDate = null;
+        await report.save();
       }
+      
 
       transfer.status = "completed";
 

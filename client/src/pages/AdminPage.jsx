@@ -25,6 +25,7 @@ export default function AdminPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [slaLoading, setSlaLoading] = useState(false);
+  const [slaResult, setSlaResult] = useState(null);
 
   const [reasonUserId, setReasonUserId] = useState(null);
   const [reasonAction, setReasonAction] = useState(null);
@@ -134,25 +135,20 @@ export default function AdminPage() {
     }
   };
 
-  // ---------------- Run SLA Check ----------------
+  // --- Updated Run SLA Check handler ---
   const handleRunSLA = async () => {
     if (!window.confirm("Run SLA check now?")) return;
     setSlaLoading(true);
+    setSlaResult(null);
+
     try {
       const res = await API.get("/reports/check-sla");
-      const { escalatedCount, escalatedReports } = res.data;
-      alert(
-        `SLA Check completed.\nEscalated Reports: ${escalatedCount}\n` +
-          (escalatedReports
-            .map(
-              (r) =>
-                `- ${r.title} (Dept: ${r.department}, Overdue: ${r.overdueBy} days)`
-            )
-            .join("\n") || "")
-      );
+      const { message, escalatedCount = 0, escalatedReports = [] } = res.data;
+
+      setSlaResult({ message, escalatedCount, escalatedReports });
     } catch (err) {
       console.error("SLA check failed:", err);
-      alert("Failed to run SLA check.");
+      setSlaResult({ error: "Failed to run SLA check. Please try again." });
     } finally {
       setSlaLoading(false);
     }
@@ -246,66 +242,70 @@ export default function AdminPage() {
                     <td>{u.role}</td>
                     <td>{u.warnings || 0}</td>
                     <td>{u.blocked ? "Yes" : "No"}</td>
-                   <td className="space-y-2">
-  <div className="space-x-2">
-    <Button size="sm" onClick={() => handleWarnClick(u._id)}>
-      Warn
-    </Button>
-    <Button
-      size="sm"
-      variant={u.blocked ? "default" : "destructive"}
-      onClick={() => handleBlockClick(u._id, u.blocked)}
-    >
-      {u.blocked ? "Unblock" : "Block"}
-    </Button>
+                    <td className="space-y-2">
+                      <div className="space-x-2">
+                        <Button
+                          size="sm"
+                          onClick={() => handleWarnClick(u._id)}
+                        >
+                          Warn
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant={u.blocked ? "default" : "destructive"}
+                          onClick={() => handleBlockClick(u._id, u.blocked)}
+                        >
+                          {u.blocked ? "Unblock" : "Block"}
+                        </Button>
 
-    {/* Inspect Button - Different for Citizen vs Officer */}
-    {u.role === "citizen" ? (
-      <Button
-        size="sm"
-        className="bg-blue-600 text-white"
-        onClick={() => navigate(`/admin/citizen-inspect/${u._id}`)}
-      >
-        Inspect
-      </Button>
-    ) : (
-      <Button
-        size="sm"
-        className="bg-blue-600 text-white"
-        onClick={() => navigate(`/admin/inspect/${u._id}`)}
-      >
-        Inspect
-      </Button>
-    )}
-  </div>
+                        {/* Inspect Button - Different for Citizen vs Officer */}
+                        {u.role === "citizen" ? (
+                          <Button
+                            size="sm"
+                            className="bg-blue-600 text-white"
+                            onClick={() =>
+                              navigate(`/admin/citizen-inspect/${u._id}`)
+                            }
+                          >
+                            Inspect
+                          </Button>
+                        ) : (
+                          <Button
+                            size="sm"
+                            className="bg-blue-600 text-white"
+                            onClick={() => navigate(`/admin/inspect/${u._id}`)}
+                          >
+                            Inspect
+                          </Button>
+                        )}
+                      </div>
 
-  {reasonUserId === u._id && reasonAction && (
-    <div className="mt-2 space-x-2">
-      <input
-        type="text"
-        placeholder="Enter reason..."
-        className="border p-1 rounded w-72"
-        value={reasonText}
-        onChange={(e) => setReasonText(e.target.value)}
-      />
-      <Button size="sm" onClick={submitReasonAction}>
-        Send
-      </Button>
-      <Button
-        size="sm"
-        variant="default"
-        onClick={() => {
-          setReasonUserId(null);
-          setReasonAction(null);
-          setReasonText("");
-        }}
-      >
-        Cancel
-      </Button>
-    </div>
-  )}
-</td>
-
+                      {reasonUserId === u._id && reasonAction && (
+                        <div className="mt-2 space-x-2">
+                          <input
+                            type="text"
+                            placeholder="Enter reason..."
+                            className="border p-1 rounded w-72"
+                            value={reasonText}
+                            onChange={(e) => setReasonText(e.target.value)}
+                          />
+                          <Button size="sm" onClick={submitReasonAction}>
+                            Send
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="default"
+                            onClick={() => {
+                              setReasonUserId(null);
+                              setReasonAction(null);
+                              setReasonText("");
+                            }}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -344,6 +344,59 @@ export default function AdminPage() {
           {slaLoading ? "Running SLA Check..." : "Run SLA Check"}
         </Button>
       </div>
+
+    {/* SLA Results Display */}
+{slaResult && (
+  <Card className="border border-blue-200 shadow-md">
+    <CardContent>
+      <h2 className="text-xl font-semibold text-blue-700 mb-2">SLA Check Result</h2>
+
+      {slaResult.error ? (
+        <p className="text-red-600">{slaResult.error}</p>
+      ) : slaResult.escalatedCount === 0 ? (
+        <p className="text-green-600 font-medium">
+          ✅ {slaResult.message} — All reports are within SLA limits.
+        </p>
+      ) : (
+        <>
+          <p className="text-red-600 font-medium mb-3">
+            🚨 {slaResult.escalatedCount} report(s) breached SLA.
+          </p>
+
+          <div className="overflow-x-auto border rounded">
+            <table className="min-w-full text-sm border-collapse">
+              <thead className="bg-gray-100 dark:bg-gray-800 dark:text-white">
+                <tr>
+                  <th className="p-2 border">#</th>
+                  <th className="p-2 border">Title</th>
+                  <th className="p-2 border">Department</th>
+                  <th className="p-2 border">Officer</th>
+                  <th className="p-2 border">SLA Days</th>
+                  <th className="p-2 border">Overdue (Days)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {slaResult.escalatedReports.map((r, i) => (
+                  <tr key={i} className="border-t hover:bg-gray-50 dark:hover:bg-gray-700">
+                    <td className="p-2 border text-center">{i + 1}</td>
+                    <td className="p-2 border">{r.title}</td>
+                    <td className="p-2 border">{r.department}</td>
+                    <td className="p-2 border">{r.officer || "Unassigned"}</td>
+                    <td className="p-2 border text-center">{r.slaDays}</td>
+                    <td className="p-2 border text-center text-red-600 font-semibold">
+                      {r.overdueBy}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </CardContent>
+  </Card>
+)}
+
 
       {/* Users and Officers Tables */}
       {renderUserTable(users, "Citizens")}

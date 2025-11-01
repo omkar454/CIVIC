@@ -1,4 +1,3 @@
-// pages/OfficerInspect.jsx
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { Card, CardContent } from "../components/ui/card";
@@ -6,7 +5,7 @@ import { Button } from "../components/ui/button";
 import API from "../services/api";
 
 export default function OfficerInspect() {
-  const { id } = useParams(); // officer id
+  const { id } = useParams(); // officer ID
   const navigate = useNavigate();
   const [officerData, setOfficerData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -17,7 +16,7 @@ export default function OfficerInspect() {
         const res = await API.get(`/reports/officer/${id}`);
         setOfficerData(res.data);
       } catch (err) {
-        console.error("Inspect fetch error:", err);
+        console.error("❌ Inspect fetch error:", err);
       } finally {
         setLoading(false);
       }
@@ -27,16 +26,16 @@ export default function OfficerInspect() {
 
   if (loading)
     return <p className="text-center mt-8">Loading officer report card...</p>;
+
   if (!officerData)
     return <p className="text-center text-red-600">No data found.</p>;
 
-  const reports = officerData.reports || [];
+  const { officer, reports = [], officerId } = officerData;
+
   const total = reports.length;
   const onTime = reports.filter((r) => r.slaStatus === "On Time").length;
   const overdue = reports.filter((r) => r.slaStatus === "Overdue").length;
   const pending = reports.filter((r) => r.slaStatus === "Pending").length;
-
-  const officer = officerData.officer || {};
   const performance = total > 0 ? Math.round((onTime / total) * 100) : 0;
 
   return (
@@ -51,9 +50,7 @@ export default function OfficerInspect() {
       {/* Officer Info */}
       <Card className="shadow-md">
         <CardContent className="p-4">
-          <h2 className="text-xl font-medium mb-2">
-            Officer ID: {officerData.officerId}
-          </h2>
+          <h2 className="text-xl font-medium mb-2">Officer ID: {officerId}</h2>
           <p>
             <strong>Name:</strong> {officer?.name || "N/A"}
           </p>
@@ -117,16 +114,18 @@ export default function OfficerInspect() {
                       ? "bg-red-50"
                       : r.slaStatus === "On Time"
                       ? "bg-green-50"
+                      : r.slaStatus === "Pending"
+                      ? "bg-yellow-50"
                       : ""
                   }
                 >
                   <td className="p-2 border">{r.title}</td>
-                  <td className="p-2 border">{r.priorityScore}</td>
-                  <td className="p-2 border">{r.severity}</td>
-                  <td className="p-2 border">{r.status}</td>
-                  <td className="p-2 border text-center">{r.slaDays}</td>
+                  <td className="p-2 border text-center">{r.priorityScore}</td>
+                  <td className="p-2 border text-center">{r.severity}</td>
+                  <td className="p-2 border text-center">{r.status}</td>
+                  <td className="p-2 border text-center">{r.slaDays ?? "-"}</td>
                   <td
-                    className={`p-2 border font-semibold ${
+                    className={`p-2 border font-semibold text-center ${
                       r.slaStatus === "Overdue"
                         ? "text-red-600"
                         : r.slaStatus === "On Time"
@@ -134,12 +133,12 @@ export default function OfficerInspect() {
                         : "text-yellow-600"
                     }`}
                   >
-                    {r.slaStatus}
+                    {r.slaStatus || "N/A"}
                   </td>
-                  <td className="p-2 border">
+                  <td className="p-2 border text-center">
                     {new Date(r.createdAt).toLocaleDateString()}
                   </td>
-                  <td className="p-2 border">
+                  <td className="p-2 border text-center">
                     {r.resolvedAt
                       ? new Date(r.resolvedAt).toLocaleDateString()
                       : "-"}

@@ -11,13 +11,14 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
-  Cell,
 } from "recharts";
 
 export default function AdminAnalytics() {
   const [trends, setTrends] = useState([]);
   const [departments, setDepartments] = useState([]);
   const [summary, setSummary] = useState([]);
+  const [slaTrend, setSlaTrend] = useState([]);
+  const [selectedDept, setSelectedDept] = useState("All"); // dropdown filter
 
   const token = localStorage.getItem("accessToken");
 
@@ -31,16 +32,14 @@ export default function AdminAnalytics() {
       })
       .then((res) => {
         const raw = res.data.trends || [];
-
-        // 🧠 Normalize: collect all department names
         const allDepts = new Set();
+
         raw.forEach((entry) => {
           Object.keys(entry).forEach((key) => {
             if (key !== "month") allDepts.add(key);
           });
         });
 
-        // 🧩 Fill missing departments with 0 for each month
         const normalized = raw.map((entry) => {
           const filled = { ...entry };
           allDepts.forEach((dept) => {
@@ -66,7 +65,7 @@ export default function AdminAnalytics() {
       })
       .catch((err) => console.error("Department insights error:", err));
 
-    // 3️⃣ Monthly / Quarterly Performance Summary
+    // 3️⃣ Monthly Performance Summary
     const now = new Date();
     axios
       .get(
@@ -77,6 +76,17 @@ export default function AdminAnalytics() {
       )
       .then((res) => setSummary(res.data.summary || []))
       .catch((err) => console.error("Performance summary error:", err));
+
+    // 4️⃣ SLA Overdue Trend (Monthly)
+    axios
+      .get(
+        "http://localhost:5000/api/admin/sla-overdue-trend?period=month&months=6",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      )
+      .then((res) => setSlaTrend(res.data || []))
+      .catch((err) => console.error("SLA overdue trend error:", err));
   }, [token]);
 
   const colorPalette = [
@@ -90,6 +100,23 @@ export default function AdminAnalytics() {
     "#F97316",
     "#6366F1",
   ];
+
+  // 🔄 Prepare SLA Trend Chart Data (monthly)
+  const monthsList = [...new Set(slaTrend.map((d) => d.month))].sort();
+  const allDepts = [...new Set(slaTrend.map((d) => d.department))];
+
+  const filteredDepts = selectedDept === "All" ? allDepts : [selectedDept];
+
+  const chartData = monthsList.map((month) => {
+    const monthData = { month };
+    filteredDepts.forEach((dept) => {
+      const entry = slaTrend.find(
+        (d) => d.month === month && d.department === dept
+      );
+      monthData[dept] = entry ? entry.overdueCount : 0;
+    });
+    return monthData;
+  });
 
   return (
     <div className="mt-10 space-y-6">
@@ -147,11 +174,11 @@ export default function AdminAnalytics() {
         </div>
       )}
 
-      {/* 3️⃣ Monthly / Quarterly Summary */}
+      {/* 3️⃣ Monthly Performance Summary */}
       {summary.length > 0 && (
         <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow">
           <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
-            Monthly / Quarterly Performance Summary
+            Monthly Performance Summary
           </h3>
           <ResponsiveContainer width="100%" height={300}>
             <BarChart data={summary}>
@@ -166,6 +193,61 @@ export default function AdminAnalytics() {
           </ResponsiveContainer>
         </div>
       )}
+
+      {/* 4️⃣ SLA Overdue Trend (Monthly, Filter by Department) */}
+      <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow">
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+            📈 SLA Overdue Trend by Department (Last 6 Months)
+          </h3>
+
+          {/* Department Filter Dropdown */}
+          <select
+            value={selectedDept}
+            onChange={(e) => setSelectedDept(e.target.value)}
+            className="border border-gray-300 rounded-md px-3 py-1 text-sm dark:bg-gray-700 dark:text-gray-200"
+          >
+            <option value="All">All Departments</option>
+            {allDepts.map((dept) => (
+              <option key={dept} value={dept}>
+                {dept}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {chartData.length === 0 ? (
+          <div className="h-64 flex items-center justify-center">
+            <p className="text-gray-500 italic text-sm">
+              No escalated or overdue reports found in the last 6 months.
+            </p>
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={400}>
+            <LineChart data={chartData}>
+              <XAxis dataKey="month" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              {filteredDepts.map((dept, index) => (
+                <Line
+                  key={dept}
+                  type="monotone"
+                  dataKey={dept}
+                  stroke={`hsl(${index * 45}, 70%, 55%)`}
+                  strokeWidth={2}
+                  dot={false}
+                />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+
+        <p className="text-xs text-gray-500 italic mt-2">
+          *Monthly trend of overdue SLA reports. Use dropdown to filter by
+          department.*
+        </p>
+      </div>
     </div>
   );
 }

@@ -37,7 +37,6 @@ function calculatePriority(severity, votes) {
   return severity * 10 + votes * 2;
 }
 
-
 /* ------------------------------------------------------------
    🗺️ Geocode Address using OpenStreetMap
 ------------------------------------------------------------ */
@@ -58,54 +57,45 @@ async function geocodeAddress(address) {
   }
 }
 
-/* ------------------------------------------------------------------
-   🚨 SLA & Auto Escalation Route (Modified for TextAddressReport)
--------------------------------------------------------------------*/
 router.get("/check-sla", auth("admin"), async (req, res) => {
   try {
     const now = new Date();
 
-    // Fetch all active geocoded reports
+    // Only active reports (skip resolved/rejected)
+    const activeStatuses = ["Acknowledged", "In Progress"];
+
+    // Fetch reports from both collections
     const geoReports = await Report.find({
-      status: { $in: ["Open", "Acknowledged", "In Progress"] },
-      escalated: { $ne: true },
+      status: { $in: activeStatuses },
+      slaStatus: "Pending",
     }).populate("assignedTo", "name email role department");
 
-    // Fetch all active text address reports
     const textReports = await TextAddressReport.find({
-      status: { $in: ["Open", "Acknowledged", "In Progress"] },
-      escalated: { $ne: true },
+      status: { $in: activeStatuses },
+      slaStatus: "Pending",
     }).populate("assignedTo", "name email role department");
 
-    // Combine both types
     const allReports = [...geoReports, ...textReports];
-
     const escalatedReports = [];
 
     for (const r of allReports) {
-      let slaDays = 5;
-      if (r.priorityScore > 30) slaDays = 2;
-      else if (r.priorityScore > 20) slaDays = 3;
-      else if (r.priorityScore > 10) slaDays = 4;
+      if (!r.slaStartDate || !r.slaDays) continue;
 
-      const createdAt = new Date(r.createdAt);
-      const deadline = new Date(createdAt);
-      deadline.setDate(deadline.getDate() + slaDays);
+      const deadline = new Date(r.slaStartDate);
+      deadline.setDate(deadline.getDate() + r.slaDays);
 
+      // Check SLA breach
       if (now > deadline) {
-        r.escalated = true;
-        r.escalationDetails = {
-          overdueBy: Math.floor((now - deadline) / (1000 * 60 * 60 * 24)),
-          checkedAt: now,
-          slaDays,
-        };
+        r.slaStatus = "Overdue";
         await r.save();
 
         // Notify assigned officer
         if (r.assignedTo) {
           await Notification.create({
             user: r.assignedTo._id,
-            message: `⚠️ Report "${r.title}" is overdue by ${r.escalationDetails.overdueBy} day(s).`,
+            message: `⚠️ Report "${r.title}" is overdue by ${Math.floor(
+              (now - deadline) / (1000 * 60 * 60 * 24)
+            )} day(s).`,
           });
         }
 
@@ -123,15 +113,15 @@ router.get("/check-sla", auth("admin"), async (req, res) => {
           id: r._id,
           title: r.title,
           department: r.department,
-          officer: r.assignedTo?.name,
-          overdueBy: r.escalationDetails.overdueBy,
-          slaDays,
+          officer: r.assignedTo?.name || "Unassigned",
+          overdueBy: Math.floor((now - deadline) / (1000 * 60 * 60 * 24)),
+          slaDays: r.slaDays,
         });
       }
     }
 
-    res.json({
-      message: "SLA check completed",
+    return res.json({
+      message: "SLA check completed successfully",
       escalatedCount: escalatedReports.length,
       escalatedReports,
     });
@@ -140,7 +130,6 @@ router.get("/check-sla", auth("admin"), async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
 
 /* ------------------------------------------------------------
    📝 Create Report (Citizen)
@@ -257,7 +246,6 @@ router.post("/", auth("citizen"), async (req, res) => {
   }
 });
 
-
 /* ------------------------------------------------------------
    🛠️ Update Report Status (Officer/Admin)
 ------------------------------------------------------------ */
@@ -308,7 +296,9 @@ router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
       } else if (status === "Open" || status === "Acknowledged") {
         report.status = status;
       } else {
-        return res.status(400).json({ message: "Invalid officer status value" });
+        return res
+          .status(400)
+          .json({ message: "Invalid officer status value" });
       }
 
       // Push status history
@@ -340,7 +330,12 @@ router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
     if (user.role === "admin") {
       if (!report.adminVerification) {
         // Ensure adminVerification exists
-        report.adminVerification = { verified: null, note: "", verifiedAt: null, history: [] };
+        report.adminVerification = {
+          verified: null,
+          note: "",
+          verifiedAt: null,
+          history: [],
+        };
       }
 
       if (status === "Verified - Resolved") {
@@ -374,7 +369,9 @@ router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
       // Notify citizen
       await new Notification({
         user: report.reporter._id,
-        message: `✅ Your report "${report.title}" has been ${report.status.toLowerCase()} by admin.`,
+        message: `✅ Your report "${
+          report.title
+        }" has been ${report.status.toLowerCase()} by admin.`,
       }).save();
     }
 
@@ -398,8 +395,6 @@ router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
   }
 });
 
-
-
 router.get("/officer/:id", auth("admin"), async (req, res) => {
   try {
     const { id } = req.params;
@@ -409,59 +404,69 @@ router.get("/officer/:id", auth("admin"), async (req, res) => {
     const officer = await User.findById(id).select(
       "name email department role"
     );
-    console.log("👤 Officer fetched:", officer);
-
     if (!officer) {
       console.warn("⚠️ Officer not found in database for ID:", id);
       return res.status(404).json({ message: "Officer not found" });
     }
 
-    // ✅ Fetch reports based on officer's department
-    console.log("🔍 Fetching reports for department:", officer.department);
-
-    const reports = await Report.find({ department: officer.department })
-      .populate("reporter", "name email role")
-      .sort({ createdAt: -1 });
-
-    const textReports = await TextAddressReport.find({
-      department: officer.department,
-    })
-      .populate("reporter", "name email role")
-      .sort({ createdAt: -1 });
-
-    console.log("🧾 Reports found:", reports.length);
-    console.log("📄 Text Reports found:", textReports.length);
+    // Fetch reports belonging to officer’s department
+    const [reports, textReports] = await Promise.all([
+      Report.find({ department: officer.department })
+        .populate("reporter", "name email role")
+        .sort({ createdAt: -1 }),
+      TextAddressReport.find({ department: officer.department })
+        .populate("reporter", "name email role")
+        .sort({ createdAt: -1 }),
+    ]);
 
     const allReports = [...reports, ...textReports];
-    console.log("📊 Total Combined Reports:", allReports.length);
 
     const processed = allReports.map((r, index) => {
+      // Determine SLA days based on priority score
       let slaDays = 5;
       if (r.priorityScore > 30) slaDays = 2;
       else if (r.priorityScore > 20) slaDays = 3;
       else if (r.priorityScore > 10) slaDays = 4;
 
-      const createdAt = new Date(r.createdAt);
+      // Detect reference date (transfer → reinitialize SLA)
+      const baseDate = r.transferApprovedAt
+        ? new Date(r.transferApprovedAt)
+        : new Date(r.createdAt);
+
       const resolvedAt =
         r.status === "Resolved" || r.status === "Rejected"
           ? new Date(r.updatedAt)
           : null;
 
-      const deadline = new Date(createdAt);
+      // Compute deadline
+      const deadline = new Date(baseDate);
       deadline.setDate(deadline.getDate() + slaDays);
 
+      // Determine SLA status
       let slaStatus = "Pending";
-      if (resolvedAt)
-        slaStatus = resolvedAt <= deadline ? "On Time" : "Overdue";
-      else if (Date.now() > deadline) slaStatus = "Overdue";
 
-      console.log(`📍 Report ${index + 1}:`, {
+      // If status = Open → SLA not started yet
+      if (r.status === "Open") {
+        slaStatus = "N/A";
+        slaDays = null;
+      }
+      // If resolved or rejected → freeze SLA status at completion
+      else if (resolvedAt) {
+        slaStatus = resolvedAt <= deadline ? "On Time" : "Overdue";
+      }
+      // Otherwise → active and still pending
+      else if (Date.now() > deadline) {
+        slaStatus = "Overdue";
+      } else {
+        slaStatus = "Pending";
+      }
+
+      console.log(`📍 Report ${index + 1}`, {
         title: r.title,
         status: r.status,
+        priorityScore: r.priorityScore,
         slaDays,
         slaStatus,
-        createdAt,
-        resolvedAt,
       });
 
       return {
@@ -471,22 +476,20 @@ router.get("/officer/:id", auth("admin"), async (req, res) => {
         priorityScore: r.priorityScore,
         severity: r.severity,
         status: r.status,
-        createdAt,
+        createdAt: r.createdAt,
         resolvedAt,
         slaDays,
         slaStatus,
       };
     });
 
-    console.log("✅ Processed reports count:", processed.length);
+    console.log("✅ Processed reports:", processed.length);
 
     res.json({
       officerId: officer._id,
       officer,
       reports: processed,
     });
-
-    console.log("✅ Response sent successfully for officer:", officer.name);
   } catch (err) {
     console.error("❌ Officer route error:", err);
     res.status(500).json({ message: "Server error" });
@@ -725,8 +728,6 @@ router.get("/:id", auth(), async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 });
-
-
 
 /* ------------------------------------------------------------
    👮 Assign Officer

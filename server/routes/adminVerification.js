@@ -71,6 +71,14 @@ router.post("/:id/verify", auth("admin"), async (req, res) => {
 
       report.severity = severity;
       report.status = "Acknowledged";
+      // 🕒 Initialize SLA tracking after approval
+      report.slaStartDate = new Date();
+      if (report.priorityScore >= 60) report.slaDays = 2;
+      else if (report.priorityScore >= 30) report.slaDays = 4;
+      else report.slaDays = 7;
+      report.slaStatus = "Pending";
+      report.slaEndDate = null;
+
       report.priorityScore = severity * 10 + report.votes * 5;
 
       report.statusHistory.push({

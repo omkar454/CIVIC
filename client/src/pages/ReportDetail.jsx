@@ -1,5 +1,5 @@
 // src/pages/ReportDetail.jsx
-import { useState, useEffect } from "react";
+import React,{ useState, useEffect } from "react";
 import { useParams } from "react-router-dom";
 import API from "../services/api";
 import { Button } from "../components/ui/button";
@@ -83,6 +83,91 @@ export default function ReportDetail() {
       setLoading(false);
     }
   };
+function SLASection({ report }) {
+  const start = new Date(report.slaStartDate);
+  const end = report.slaEndDate ? new Date(report.slaEndDate) : null;
+  const totalMs = report.slaDays * 24 * 60 * 60 * 1000;
+  const stop = report.status === "Resolved" || report.status === "Rejected";
+
+  const [remainingTime, setRemainingTime] = React.useState(() => {
+    const now = new Date();
+    const elapsed = now - start;
+    return Math.max(totalMs - elapsed, 0);
+  });
+
+  React.useEffect(() => {
+    if (stop) return;
+    const interval = setInterval(() => {
+      const now = new Date();
+      const elapsed = now - start;
+      const remaining = Math.max(totalMs - elapsed, 0);
+      setRemainingTime(remaining);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [report.slaStartDate, report.status]);
+
+  const toTimeParts = (ms) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const days = Math.floor(totalSeconds / (3600 * 24));
+    const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return { days, hours, minutes, seconds };
+  };
+
+  const parts = toTimeParts(remainingTime);
+  const isOverdue = !stop && remainingTime === 0;
+  const progressPct = Math.min(
+    ((totalMs - remainingTime) / totalMs) * 100,
+    100
+  );
+
+  return (
+    <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3">
+      <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+        SLA Countdown
+      </h3>
+
+      <p className="text-gray-700 dark:text-gray-300">
+        <strong>Total SLA:</strong> {report.slaDays} days
+      </p>
+
+      <div className="flex items-center justify-between mt-1">
+        <p
+          className={`font-semibold text-lg ${
+            stop
+              ? "text-green-600 dark:text-green-400"
+              : isOverdue
+              ? "text-red-600 dark:text-red-400"
+              : "text-blue-600 dark:text-blue-400"
+          }`}
+        >
+          {stop
+            ? report.status === "Resolved"
+              ? "✅ SLA stopped — report resolved"
+              : "🚫 SLA stopped — report rejected"
+            : isOverdue
+            ? "⚠️ SLA Overdue"
+            : `⏳ ${parts.days}d ${parts.hours}h ${parts.minutes}m ${parts.seconds}s left`}
+        </p>
+      </div>
+
+      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 mt-3">
+        <div
+          className={`h-3 rounded-full transition-all duration-500 ${
+            isOverdue ? "bg-red-500" : stop ? "bg-green-500" : "bg-blue-500"
+          }`}
+          style={{ width: `${progressPct}%` }}
+        ></div>
+      </div>
+
+      <div className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+        <p>Start: {start.toLocaleString()}</p>
+        {end && <p>End: {end.toLocaleString()}</p>}
+      </div>
+    </div>
+  );
+}
 
  const handleAdminDecision = async (isApproved) => {
    if (!adminNote.trim()) {
@@ -387,6 +472,8 @@ const generateQRCode = async () => {
           </p>
         </div>
       )}
+      {/* ---------------- SLA Countdown Section ---------------- */}
+      {report.slaDays && report.slaStartDate && <SLASection report={report} />}
 
       {/* ---------------- Officer Status Controls ---------------- */}
       {canUpdateStatus ? (
@@ -486,7 +573,8 @@ const generateQRCode = async () => {
 
       {role === "admin" &&
         report.pendingStatus &&
-        (report.adminVerification?.verified === null || report.adminVerification?.verified === false) && (
+        (report.adminVerification?.verified === null ||
+          report.adminVerification?.verified === false) && (
           <div className="bg-yellow-50 dark:bg-yellow-900 p-4 rounded-xl shadow-lg space-y-3">
             <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
               Admin Verification Required
@@ -609,8 +697,8 @@ const generateQRCode = async () => {
           </h2>
 
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Field officers or citizens or admin can scan this QR code to verify the
-            report’s authenticity and view live updates.
+            Field officers or citizens or admin can scan this QR code to verify
+            the report’s authenticity and view live updates.
           </p>
 
           <div className="flex flex-col items-center space-y-3">

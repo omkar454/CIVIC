@@ -18,6 +18,7 @@ export default function ReportTracking({ darkMode }) {
   const { id } = useParams();
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [remainingTime, setRemainingTime] = useState(0);
 
   const roleColors = {
     citizen: "bg-blue-500",
@@ -26,6 +27,7 @@ export default function ReportTracking({ darkMode }) {
     system: "bg-gray-500",
   };
 
+  // 🧩 Fetch report from backend
   const fetchReport = async () => {
     try {
       setLoading(true);
@@ -42,6 +44,29 @@ export default function ReportTracking({ darkMode }) {
   useEffect(() => {
     fetchReport();
   }, [id]);
+
+  // 🕒 SLA Countdown Timer
+  useEffect(() => {
+    if (!report?.slaStartDate || !report?.slaDays) return;
+
+    const start = new Date(report.slaStartDate);
+    const totalMs = report.slaDays * 24 * 60 * 60 * 1000;
+    const stop = report.status === "Resolved" || report.status === "Rejected";
+
+    const updateTimer = () => {
+      const now = new Date();
+      const elapsed = now - start;
+      const remaining = Math.max(totalMs - elapsed, 0);
+      setRemainingTime(remaining);
+    };
+
+    updateTimer();
+
+    if (!stop) {
+      const interval = setInterval(updateTimer, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [report]);
 
   const getIcon = (role, type = "status") => {
     if (type === "transfer")
@@ -90,27 +115,28 @@ export default function ReportTracking({ darkMode }) {
       : JSON.stringify(user);
   };
 
-  // --- 🧮 SLA Calculation ---
-  const calculateSLA = () => {
-    const priority = report.priorityScore || 0;
-    let slaDays = 5;
-    if (priority > 30) slaDays = 2;
-    else if (priority > 20) slaDays = 3;
-    else if (priority > 10) slaDays = 4;
-
-    const created = new Date(report.createdAt);
-    const deadline = new Date(created);
-    deadline.setDate(deadline.getDate() + slaDays);
-
-    const now = new Date();
-    const diffDays = Math.floor((deadline - now) / (1000 * 60 * 60 * 24));
-    const overdue = diffDays < 0;
-    const remainingDays = Math.abs(diffDays);
-
-    return { slaDays, deadline, overdue, remainingDays };
+  // 🧮 Convert remaining ms to time parts
+  const toTimeParts = (ms) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    const days = Math.floor(totalSeconds / (3600 * 24));
+    const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return { days, hours, minutes, seconds };
   };
 
-  const { slaDays, deadline, overdue, remainingDays } = calculateSLA();
+  const parts = toTimeParts(remainingTime);
+  const isOverdue = remainingTime === 0 && report.slaStatus === "Overdue";
+  const stop = report.status === "Resolved" || report.status === "Rejected";
+  const progressPct =
+    report.slaDays && report.slaStartDate
+      ? Math.min(
+          ((report.slaDays * 24 * 60 * 60 * 1000 - remainingTime) /
+            (report.slaDays * 24 * 60 * 60 * 1000)) *
+            100,
+          100
+        )
+      : 0;
 
   const timeline = [
     ...(report.statusHistory || []),
@@ -179,40 +205,71 @@ export default function ReportTracking({ darkMode }) {
         </div>
 
         {/* SLA Section */}
-        <div className="mt-4 p-3 rounded-md border bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-700">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm">
-                <strong>SLA Limit:</strong> {slaDays} days
-              </p>
-              <p className="text-sm">
-                <strong>Deadline:</strong>{" "}
-                {deadline.toLocaleDateString(undefined, {
-                  dateStyle: "medium",
-                })}
-              </p>
-              <p className="text-sm">
-                <strong>Status:</strong>{" "}
-                {overdue ? (
-                  <span className="text-red-500 font-medium">
-                    Overdue by {remainingDays} day(s)
-                  </span>
-                ) : (
-                  <span className="text-green-600 font-medium">
-                    On Time — {remainingDays} day(s) left
-                  </span>
-                )}
-              </p>
-            </div>
-            <div>
-              {overdue ? (
+        {report.slaDays && report.slaStartDate && (
+          <div className="mt-4 p-3 rounded-md border bg-gray-50 dark:bg-gray-900 border-gray-300 dark:border-gray-700">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm">
+                  <strong>Total SLA:</strong> {report.slaDays} days
+                </p>
+                <p className="text-sm">
+                  <strong>SLA Status:</strong>{" "}
+                  {isOverdue ? (
+                    <span className="text-red-500 font-medium">⚠️ Overdue</span>
+                  ) : stop ? (
+                    <span className="text-green-500 font-medium">
+                      ✅ Stopped ({report.status})
+                    </span>
+                  ) : (
+                    <span className="text-blue-500 font-medium">
+                      ⏳ {parts.days}d {parts.hours}h {parts.minutes}m{" "}
+                      {parts.seconds}s left
+                    </span>
+                  )}
+                </p>
+              </div>
+              {isOverdue ? (
                 <AlertTriangle className="w-8 h-8 text-red-500" />
               ) : (
                 <CheckCircle className="w-8 h-8 text-green-500" />
               )}
             </div>
+
+            {/* Progress bar */}
+            <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 mt-3">
+              <div
+                className={`h-3 rounded-full transition-all duration-500 ${
+                  isOverdue
+                    ? "bg-red-500"
+                    : stop
+                    ? "bg-green-500"
+                    : "bg-blue-500"
+                }`}
+                style={{ width: `${progressPct}%` }}
+              ></div>
+            </div>
+
+            {/* Dates */}
+            <div className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+              <p>
+                Start:{" "}
+                {new Date(report.slaStartDate).toLocaleString(undefined, {
+                  dateStyle: "medium",
+                  timeStyle: "short",
+                })}
+              </p>
+              {report.slaEndDate && (
+                <p>
+                  End:{" "}
+                  {new Date(report.slaEndDate).toLocaleString(undefined, {
+                    dateStyle: "medium",
+                    timeStyle: "short",
+                  })}
+                </p>
+              )}
+            </div>
           </div>
-        </div>
+        )}
 
         <div className="mt-2 text-sm text-gray-600 dark:text-gray-400">
           <p>
