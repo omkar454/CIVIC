@@ -67,12 +67,12 @@ router.get("/check-sla", auth("admin"), async (req, res) => {
     // Fetch reports from both collections
     const geoReports = await Report.find({
       status: { $in: activeStatuses },
-      slaStatus: "Pending",
+      slaStatus: { $in: ["Pending", "Overdue"] }
     }).populate("assignedTo", "name email role department");
 
     const textReports = await TextAddressReport.find({
       status: { $in: activeStatuses },
-      slaStatus: "Pending",
+      slaStatus: { $in: ["Pending", "Overdue"] }
     }).populate("assignedTo", "name email role department");
 
     const allReports = [...geoReports, ...textReports];

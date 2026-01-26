@@ -373,40 +373,31 @@ router.get("/department-trends", auth("admin"), async (req, res) => {
   }
 });
 
-// routes/adminRoutes.js
-
 router.get("/performance-summary", async (req, res) => {
   try {
-    const { period, year, month } = req.query;
+    const { year, month } = req.query;
 
-    // ✅ Convert to numbers safely
     const selectedYear = parseInt(year);
     const selectedMonth = parseInt(month);
 
-    // ✅ Define time range for the month
+    if (!selectedYear || !selectedMonth) {
+      return res.status(400).json({ error: "Invalid year or month" });
+    }
+
     const startOfMonth = new Date(selectedYear, selectedMonth - 1, 1);
     const endOfMonth = new Date(selectedYear, selectedMonth, 1);
 
-    // ✅ Aggregate complaints grouped by department
-    const summary = await Complaint.aggregate([
-      {
-        $match: {
-          createdAt: { $gte: startOfMonth, $lt: endOfMonth },
-        },
-      },
+    const summary = await Report.aggregate([
+      { $match: { createdAt: { $gte: startOfMonth, $lt: endOfMonth } } },
       {
         $group: {
           _id: "$department",
           total: { $sum: 1 },
           resolved: {
-            $sum: {
-              $cond: [{ $eq: ["$status", "resolved"] }, 1, 0],
-            },
+            $sum: { $cond: [{ $eq: ["$status", "Resolved"] }, 1, 0] },
           },
           rejected: {
-            $sum: {
-              $cond: [{ $eq: ["$status", "rejected"] }, 1, 0],
-            },
+            $sum: { $cond: [{ $eq: ["$status", "Rejected"] }, 1, 0] },
           },
         },
       },
@@ -428,6 +419,7 @@ router.get("/performance-summary", async (req, res) => {
     res.status(500).json({ error: "Server error in performance summary" });
   }
 });
+
 
 
 

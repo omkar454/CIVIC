@@ -133,19 +133,33 @@ Always be polite, clear, and encouraging civic participation.
     const response = await fetch(apiUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ parts: [{ text: message }] }],
-        generationConfig: { maxOutputTokens: 300, temperature: 0.7 },
-      }),
+     body: JSON.stringify({
+  contents: [
+    {
+      role: "user",
+      parts: [{ text: message }]
+    }
+  ],
+  systemInstruction: {
+    role: "system",
+    parts: [{ text: systemPrompt }]
+  },
+  generationConfig: {
+    maxOutputTokens: 300,
+    temperature: 0.7
+  }
+}),
     });
 
-    const data = await response.json();
+  const data = await response.json();
+  console.log("RAW GEMINI:", JSON.stringify(data, null, 2));
+
 
     let aiResponse = "Sorry, I couldn’t generate a response at the moment.";
-    if (response.ok && data?.candidates?.[0]?.content?.parts?.[0]?.text) {
-      aiResponse = data.candidates[0].content.parts[0].text.trim();
-    }
+   if (response.ok && data?.candidates?.[0]?.content?.[0]?.parts?.[0]?.text) {
+     aiResponse = data.candidates[0].content[0].parts[0].text.trim();
+   }
+
 
     res.json({ text: aiResponse, role: userRole });
   } catch (error) {

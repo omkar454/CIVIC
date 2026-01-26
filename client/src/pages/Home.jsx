@@ -726,9 +726,10 @@ useEffect(() => {
               {
                 reports.filter(
                   (r) =>
-                    r.slaStatus === "Overdue" &&
-                    r.assignedTo?._id === userData?._id && // Officer’s own reports
-                    r.department === userDepartment // Officer’s own department
+                     r.slaStatus === "Overdue" && // Only overdue
+                      r.slaStartDate && // SLA started
+                      (r.assignedTo?._id === userData?._id ||
+                        r.department === userDepartment)
                 ).length
               }
               )
@@ -736,9 +737,10 @@ useEffect(() => {
 
             {reports.filter(
               (r) =>
-                r.slaStatus === "Overdue" &&
-                r.assignedTo?._id === userData?._id &&
-                r.department === userDepartment
+                r.slaStatus === "Overdue" && // Only overdue
+                      r.slaStartDate && // SLA started
+                      (r.assignedTo?._id === userData?._id ||
+                        r.department === userDepartment)
             ).length === 0 ? (
               <p className="text-gray-600 dark:text-gray-400">
                 No overdue or escalated reports.
@@ -748,9 +750,10 @@ useEffect(() => {
                 {reports
                   .filter(
                     (r) =>
-                      r.slaStatus === "Overdue" &&
-                      r.assignedTo?._id === userData?._id &&
-                      r.department === userDepartment
+                      r.slaStatus === "Overdue" && // Only overdue
+                      r.slaStartDate && // SLA started
+                      (r.assignedTo?._id === userData?._id ||
+                        r.department === userDepartment)
                   )
                   .map((r) => (
                     <li key={r._id} className="mb-1">
@@ -775,9 +778,7 @@ useEffect(() => {
                           )}{" "}
                           day(s)
                         </>
-                      ) : (
-                        "| SLA not started"
-                      )}
+                      ) : null}
                     </li>
                   ))}
               </ul>

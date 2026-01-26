@@ -70,7 +70,7 @@ export default function AdminAnalytics() {
     axios
       .get(
         `http://localhost:5000/api/admin/performance-summary?period=month&year=${now.getFullYear()}&month=${
-          now.getMonth() + 1
+          now.getMonth() - 1
         }`,
         { headers: { Authorization: `Bearer ${token}` } }
       )

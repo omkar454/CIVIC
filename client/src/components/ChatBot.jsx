@@ -29,10 +29,16 @@ function ChatBot({ userRole = "public", token = null }) {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
-  useEffect(() => {
+useEffect(() => {
+  // 🧹 Debounce localStorage + scrolling
+  const id = setTimeout(() => {
     scrollToBottom();
     localStorage.setItem("civic_chat_history", JSON.stringify(messages));
-  }, [messages]);
+  }, 50); // even 50ms debounce is enough
+
+  return () => clearTimeout(id);
+}, [messages]);
+
 
   // ✅ Core message send handler
   async function sendMessage(quickQ = null) {
@@ -66,8 +72,14 @@ function ChatBot({ userRole = "public", token = null }) {
         body: JSON.stringify({ message: userMessage }),
       });
 
-      const text = await res.text();
-      const data = text ? JSON.parse(text) : {};
+      let data = {};
+      try {
+        data = await res.json(); // ✅ direct safe JSON parsing
+      } catch (e) {
+        console.error("Invalid JSON from server:", e);
+        data = { text: "Server sent invalid JSON." };
+      }
+
       const aiResponse =
         data.text ||
         "CIVIC Assistant is currently unavailable. Please try again shortly.";
