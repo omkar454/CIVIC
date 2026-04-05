@@ -1,6 +1,6 @@
-// src/pages/ReportDetail.jsx
 import React,{ useState, useEffect } from "react";
-import { useParams } from "react-router-dom";
+import axios from "axios";
+import { useParams, useSearchParams } from "react-router-dom";
 import API from "../services/api";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -19,6 +19,8 @@ const redIcon = new L.Icon({
 
 export default function ReportDetail() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const fromDuplicate = searchParams.get("fromDuplicate") === "true";
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
   const [commentText, setCommentText] = useState("");
@@ -59,22 +61,26 @@ export default function ReportDetail() {
         } else throw err;
       }
 
-      if (data.isTextReport) {
+      if (data.isTextReport || (data.location?.coordinates?.length !== 2)) {
         setReport(data);
         setAddress(data.address || "");
-      } else if (data.location?.coordinates?.length === 2) {
+      } else {
         const [lng, lat] = data.location.coordinates;
         setReport({ ...data, lat, lng });
+        setAddress(data.address || ""); // 🏠 Store database address as initial value
+
+        // 🌍 Try to refresh address from Nominatim (only if browser is allowed)
         try {
-          const geoRes = await API.get(
-            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
-          );
-          setAddress(geoRes.data.display_name || "");
+          const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
+          const response = await fetch(url);
+          if (response.ok) {
+            const geoData = await response.json();
+            if (geoData.display_name) setAddress(geoData.display_name);
+          }
         } catch {
-          setAddress("");
+          console.warn("UI Geocoding failed, using stored address.");
+          // No need to setAddress(""), already set to data.address
         }
-      } else {
-        setReport(data);
       }
     } catch (err) {
       console.error("Fetch report error:", err);
@@ -283,18 +289,50 @@ const generateQRCode = async () => {
     }
 
     try {
+      // 🧠 Siamese AI Cross-Verification (Module 2) 🧠
+      let siameseData = {};
+      if (status === "Resolved" && report.media?.length > 0 && uploadedUrls.length > 0) {
+        console.log("👀 Requesting AI Work Validation...");
+        try {
+          const siameseRes = await API.post("/vision/validate", {
+            beforeImageUrl: report.media[0].url,
+            afterImageUrl: uploadedUrls[0].url,
+            originalClass: report.category // <-- NEW: Passing the issue type for the audit
+          });
+          siameseData = {
+            officerValidationPass: siameseRes.data.officerValidationPass,
+            similarityScore: siameseRes.data.similarityScore,
+            officerValidationStatus: siameseRes.data.status
+          };
+          console.log("✅ AI Status:", siameseData.officerValidationStatus);
+        } catch (vlErr) {
+          console.warn("AI Validation failed, skipping...", vlErr.message);
+        }
+      }
+
       // Send to backend
       await API.put(`/reports/${id}/status`, {
         status,
         note: statusNote,
         media: uploadedUrls,
+        ...siameseData
       });
 
-      // Show proper message
+      // 🧠 Show AI Automation-Aware Feedback (Module 2) 🧠
       if (status === "Resolved" || status === "Rejected") {
-        alert(
-          `Status updated to "${status}". Awaiting admin verification before finalizing.`
-        );
+        const sim = siameseData.similarityScore || 0;
+        const pass = siameseData.officerValidationPass;
+        
+        let aiMsg = "";
+        if (sim > 0.98) {
+          aiMsg = "🚨 AI ALERT: Duplicate photo detected. Work has been AUTO-REJECTED for potential fraud.";
+        } else if (pass && sim >= 0.7) {
+          aiMsg = `✅ AI AUTO-RESOLVED: High confidence location match (${(sim * 100).toFixed(1)}%) + Audit Pass. No admin review required.`;
+        } else {
+          aiMsg = "📋 AI UNCERTAIN: Sent to Admin Desk for manual verification of location/work.";
+        }
+          
+        alert(`Status Update: ${aiMsg}`);
       } else {
         alert(`Status updated to "${status}" successfully!`);
       }
@@ -342,6 +380,24 @@ const generateQRCode = async () => {
 
   return (
     <div className="max-w-5xl mx-auto p-4 space-y-6">
+      {/* 🚀 DUPLICATE REDIRECT BANNER 🚀 */}
+      {fromDuplicate && (
+        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-2xl p-6 shadow-xl border border-blue-400/30 mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
+          <div className="flex items-center gap-4">
+            <div className="bg-white/20 p-3 rounded-full backdrop-blur-sm">
+              <span className="text-2xl">📢</span>
+            </div>
+            <div className="flex-1">
+              <h3 className="text-xl font-bold">This is the original complaint!</h3>
+              <p className="text-indigo-100 text-sm">
+                Since yours was a duplicate of this existing issue, we've brought you here. 
+                Instead of reporting again, <strong>Upvote</strong> this one below to increase its importance for the authorities!
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ---------------- Report Details ---------------- */}
       <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-6 space-y-4">
         <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-2">
@@ -371,8 +427,83 @@ const generateQRCode = async () => {
           {report.transfer?.status === "approved"
             ? report.transfer.newCategory
             : report.category || "N/A"}{" "}
-          | Severity Level: {report.severity || "N/A"}
+          | Severity Level: {report.severity !== null && report.severity !== undefined ? report.severity : "N/A"}
         </p>
+
+        {/* AI Trust Indicator (Module 2) */}
+        <div className="flex flex-col gap-3 mt-2 p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-100 dark:border-gray-700">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">AI Status:</span>
+              {report.isAIVerified === true ? (
+                <Badge className="bg-green-600 text-white border-0 px-3 py-1">Auto-Verified</Badge>
+              ) : report.status === "Pending AI Review" ? (
+                <Badge className="bg-orange-500 text-white border-0 px-3 py-1">Manual Review Required</Badge>
+              ) : (
+                <Badge variant="outline" className="text-gray-400">Processing...</Badge>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 border-l pl-4 border-gray-300 dark:border-gray-600">
+              <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Authenticity:</span>
+              {report.isImageAuthentic === true ? (
+                <span className="text-green-600 dark:text-green-400 text-sm font-medium">Valid Photo</span>
+              ) : report.isImageAuthentic === false ? (
+                <span className="text-red-600 dark:text-red-400 text-sm font-medium">Flagged Photo</span>
+              ) : (
+                <span className="text-gray-400 text-sm">Checking...</span>
+              )}
+            </div>
+          </div>
+
+          {/* New AI Consensus Breakdown */}
+          {report.status === "Pending AI Review" && (
+            <div className="mt-2 p-3 bg-white dark:bg-gray-800 rounded-lg border border-orange-100 dark:border-orange-900/30">
+              <h4 className="text-xs font-bold text-orange-700 dark:text-orange-400 mb-2 flex items-center gap-1">
+                🔍 AI Consensus Breakdown
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-gray-400 uppercase font-bold">📸 Image Brain (YOLO)</span>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-blue-600 border-blue-200 bg-blue-50">
+                      {report.imageCategory || "None"}
+                    </Badge>
+                    <span className="text-xs text-green-600">Confident Match</span>
+                  </div>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] text-gray-400 uppercase font-bold">✍️ Text Brain (CLIP)</span>
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-purple-600 border-purple-200 bg-purple-50">
+                      {report.textCategory || "None"}
+                    </Badge>
+                    {report.imageCategory !== report.textCategory && (
+                      <span className="text-xs text-orange-600">⚠ Mismatch Found</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              <p className="text-[11px] text-gray-500 mt-2 italic">
+                * Note: AI flagged this report because the image and description categories do not match 100%. An admin will manually assign the final category.
+              </p>
+            </div>
+          )}
+
+          {/* Work Verification (Siamese AI) - Visible during resolution/rejection */}
+          {(report.status === "Resolved" || report.status === "Rejected" || report.pendingStatus) && (
+            <div className="flex items-center gap-2 border-t pt-2 border-gray-200 dark:border-gray-700">
+              <span className="text-sm font-medium text-gray-500">Verification Audit:</span>
+              {report.officerValidationPass === true ? (
+                <Badge className="bg-blue-600 text-white border-0">Location Match Verified</Badge>
+              ) : report.officerValidationPass === false ? (
+                <Badge className="bg-red-600 text-white border-0">Location Mismatch Detected</Badge>
+              ) : (
+                <Badge variant="outline" className="text-gray-400">Auditing...</Badge>
+              )}
+            </div>
+          )}
+        </div>
 
         {canVote && (
           <Button

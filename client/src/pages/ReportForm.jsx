@@ -12,6 +12,7 @@ import {
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import HeatmapLayer from "../components/HeatMapLayer";
+import VisionUploader from "../components/VisionUploader";
 
 // Red marker icon for selected location
 const redIcon = new L.Icon({
@@ -62,25 +63,58 @@ function isWithinBandra(lat, lng) {
   return inside;
 }
 
+// -----------------------------
+// Helper: UI-Based Geocoding (Direct to OSM)
+// -----------------------------
+async function fetchAddress(lat, lng) {
+  try {
+    // 🌍 UI-Side Reverse Geocoding (Direct to Nominatim via standard fetch)
+    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error("Geocoding service error");
+    const data = await response.json();
+    return data.display_name || `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`;
+  } catch (error) {
+    console.warn("UI Reverse geocoding failed:", error.message);
+    return `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`;
+  }
+}
+
+async function geocodeManualAddress(address) {
+  try {
+    const res = await axios.get(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}`
+    );
+    if (res.data && res.data.length > 0) {
+      return [parseFloat(res.data[0].lon), parseFloat(res.data[0].lat)];
+    }
+    return null;
+  } catch (error) {
+    console.error("UI Geocoding failed:", error.message);
+    return null;
+  }
+}
+
 // Component to handle map clicks
-function LocationPicker({ setPosition, setError }) {
+function LocationPicker({ setPosition, setError, setMapAddress }) {
   useMapEvents({
-    click(e) {
+    async click(e) {
       const lat = e.latlng.lat;
       const lng = e.latlng.lng;
 
-      // Validate Bandra polygon at marking time
+      // SOFT WARNING: Bandra polygon
       if (!isWithinBandra(lat, lng)) {
-        // Inform user and do not mark outside Bandra
         setError(
-          "❌ Selected location is outside Bandra municipal limits. Please choose a location inside the blue boundary."
+          "⚠️ Warning: Location is outside municipal limits (Testing Mode: Allowed)"
         );
-        return;
+      } else {
+        setError("");
       }
 
-      // Clear any previous error and set position
-      setError("");
       setPosition([lat, lng]);
+      setMapAddress("Fetching address...");
+      const address = await fetchAddress(lat, lng);
+      setMapAddress(address);
     },
   });
   return null;
@@ -109,15 +143,17 @@ export default function ReportForm() {
   const [form, setForm] = useState({
     title: "",
     description: "",
-    category: "",
     media: [],
   });
   const [position, setPosition] = useState(null);
+  const [success, setSuccess] = useState("");
+  const [duplicateId, setDuplicateId] = useState(null);
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   const [manualAddress, setManualAddress] = useState("");
   const [liveAddress, setLiveAddress] = useState("");
+  const [mapAddress, setMapAddress] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
   const [existingReports, setExistingReports] = useState([]);
   const [locationOption, setLocationOption] = useState("map");
 
@@ -150,20 +186,18 @@ export default function ReportForm() {
           const lat = pos.coords.latitude;
           const lng = pos.coords.longitude;
 
-          // Validate live location against Bandra polygon
+          // Validate live location against Bandra polygon (SOFT WARNING)
           if (!isWithinBandra(lat, lng)) {
-            setError("❌ Live location is outside Bandra municipal limits.");
-            setPosition(null);
-            return;
+            setError("⚠️ Warning: Live location is outside municipal limits (Testing Mode: Allowed)");
+          } else {
+            setError("");
           }
 
           setPosition([lat, lng]);
-          setError("");
           try {
-            const res = await axios.get(
-              `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`
-            );
-            setLiveAddress(res.data.display_name || "");
+            setLiveAddress("Fetching address...");
+            const address = await fetchAddress(lat, lng);
+            setLiveAddress(address);
           } catch {
             setLiveAddress("");
           }
@@ -201,7 +235,7 @@ export default function ReportForm() {
 
     try {
       // Validation
-      if (!form.title || !form.description || !form.category) {
+      if (!form.title || !form.description) {
         setError("Please fill all required fields.");
         setLoading(false);
         return;
@@ -226,6 +260,7 @@ export default function ReportForm() {
       // 1️⃣ Upload Media (if any)
       // -------------------------------
       let mediaURLs = [];
+      let visionData = {};
       if (form.media.length > 0) {
         const mediaForm = new FormData();
         form.media.forEach((file) => mediaForm.append("media", file));
@@ -243,6 +278,26 @@ export default function ReportForm() {
           url: f.url,
           mime: f.mime,
         }));
+
+        // 🧠 Zero-Touch AI Intelligence (Module 1 + 2) 🧠
+        try {
+          const visionRes = await axios.post("http://localhost:5000/api/vision/analyze", {
+            imageUrl: mediaURLs[0].url,
+            description: form.description
+          });
+          visionData = {
+            detectedObjects: visionRes.data.detectedObjects,
+            visionSeverityScore: visionRes.data.visionSeverityScore,
+            isImageAuthentic: visionRes.data.isImageAuthentic,
+            imageCategory: visionRes.data.imageCategory,
+            textCategory: visionRes.data.textCategory,
+            isAIVerified: visionRes.data.isAIVerified,
+            textEmbedding: visionRes.data.textEmbedding,
+            imageEmbedding: visionRes.data.imageEmbedding
+          };
+        } catch (visionError) {
+          console.warn("Vision engine analysis failed:", visionError.message);
+        }
       }
 
       // -------------------------------
@@ -250,54 +305,68 @@ export default function ReportForm() {
       // -------------------------------
       const payload =
         locationOption === "address"
-          ? { ...form, media: mediaURLs, address: manualAddress }
+          ? { ...form, media: mediaURLs, address: manualAddress, ...visionData }
           : {
               ...form,
               media: mediaURLs,
+              ...visionData,
               location: {
                 type: "Point",
                 coordinates: [position[1], position[0]],
               },
-              address: locationOption === "live" ? liveAddress : "",
+              address: locationOption === "live" ? liveAddress : mapAddress,
             };
 
       // -------------------------------
       // 3️⃣ Submit Report
       // -------------------------------
-      const res = await axios.post(
-        "http://localhost:5000/api/reports",
-        payload,
-        {
-          headers: { Authorization: `Bearer ${token}` },
+      let reportId;
+      try {
+        const res = await axios.post(
+          "http://localhost:5000/api/reports",
+          payload,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+        reportId = res.data.report._id;
+      } catch (err) {
+        if (err.response && err.response.status === 409) {
+          // Duplicate found!
+          setDuplicateId(err.response.data.duplicateId);
+          setShowDuplicateModal(true);
+          setLoading(false);
+          return;
         }
-      );
-
-      // Correct report ID
-      const reportId = res.data.report._id;
+        throw err; // Re-throw other errors to be caught by the outer catch
+      }
 
     
 
       // -------------------------------
       // 5️⃣ Reset Form
       // -------------------------------
-      setSuccess("Report submitted successfully!");
+      setSuccess(visionData.isAIVerified ? "AI mapped successfully!" : "AI mismatch: Assigned to Admin Review");
       setForm({
         title: "",
         description: "",
-        category: "",
-      
         media: [],
       });
       setPosition(null);
       setManualAddress("");
       setLiveAddress("");
+      setMapAddress("");
       setLocationOption("map");
 
       // Navigate to the report detail page
       setTimeout(() => navigate(`/reports/${reportId}`), 1500);
     } catch (err) {
       console.error("Create report error:", err);
-      setError(err.response?.data?.message || "Failed to submit report.");
+      if (err.response?.status === 409) {
+        setError(`⚠️ DUPLICATE FOUND: This issue was already reported. View report: ${err.response.data.duplicateId}`);
+      } else {
+        setError(err.response?.data?.message || "Failed to submit report.");
+      }
     } finally {
       setLoading(false);
     }
@@ -351,76 +420,11 @@ export default function ReportForm() {
             />
           </div>
 
-          {/* Category */}
-          <div>
-            <label className="block text-sm font-medium mb-1">Category</label>
-            <select
-              name="category"
-              value={form.category}
-              onChange={handleChange}
-              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring focus:ring-blue-400 dark:bg-gray-700 dark:text-white"
-              required
-            >
-              <option value="">Select category</option>
-              <option value="pothole">Pothole</option>
-              <option value="garbage">Garbage</option>
-              <option value="streetlight">Streetlight</option>
-              <option value="water-logging">Water Logging</option>
-              <option value="toilet">Public Toilet</option>
-              <option value="water-supply">Water Supply</option>
-              <option value="drainage">Drainage</option>
-              <option value="waste-management">Waste Management</option>
-              <option value="park">Park</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
 
          
 
           {/* Media Upload */}
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Upload Media
-            </label>
-            <input
-              type="file"
-              multiple
-              onChange={handleMediaUpload}
-              className="w-full border rounded px-3 py-2 focus:outline-none focus:ring focus:ring-blue-400 dark:bg-gray-700 dark:text-white"
-            />
-            {form.media.length > 0 && (
-              <div className="mt-2 grid grid-cols-2 md:grid-cols-3 gap-2">
-                {form.media.map((file, index) => (
-                  <div key={index} className="relative border rounded p-1">
-                    {file.type.startsWith("image") ? (
-                      <img
-                        src={URL.createObjectURL(file)}
-                        alt="preview"
-                        className="w-full h-24 object-cover rounded"
-                      />
-                    ) : file.type.startsWith("video") ? (
-                      <video
-                        src={URL.createObjectURL(file)}
-                        className="w-full h-24 object-cover rounded"
-                        controls
-                      />
-                    ) : (
-                      <div className="flex items-center justify-center h-24 text-xs text-gray-700 dark:text-gray-200">
-                        {file.name}
-                      </div>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => removeFile(index)}
-                      className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-5 h-5 text-xs flex items-center justify-center"
-                    >
-                      &times;
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <VisionUploader media={form.media} setForm={setForm} />
 
          
 
@@ -486,6 +490,7 @@ export default function ReportForm() {
                   <LocationPicker
                     setPosition={setPosition}
                     setError={setError}
+                    setMapAddress={setMapAddress}
                   />
                   {existingReports.length > 0 && (
                     <HeatmapLayer
@@ -505,11 +510,18 @@ export default function ReportForm() {
             )}
 
             {/* Selected Lat & Long */}
-            {position && locationOption !== "address" && (
-              <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">
-                Selected Location → Lat: {position[0].toFixed(6)}, Lng:{" "}
-                {position[1].toFixed(6)}
-              </p>
+            {position && locationOption === "map" && (
+              <div className="mt-2 p-2 border rounded border-blue-200 bg-blue-50 dark:bg-blue-900/20">
+                 <p className="text-sm font-semibold text-blue-700 dark:text-blue-400">
+                  📍 Map Selection Location:
+                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-300">
+                  Lat: {position[0].toFixed(6)}, Lng: {position[1].toFixed(6)}
+                </p>
+                <p className="text-sm text-gray-700 dark:text-gray-300 truncate">
+                  Address: {mapAddress || "Select a point on the map..."}
+                </p>
+              </div>
             )}
 
             {/* Live Location display */}
@@ -545,6 +557,38 @@ export default function ReportForm() {
             {loading ? "Submitting..." : "Submit Report"}
           </button>
         </form>
+      {/* Duplicate Detection Modal */}
+      {showDuplicateModal && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl p-8 max-w-md w-full border border-gray-100 dark:border-gray-700 transform transition-all">
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
+                <span className="text-3xl">📍</span>
+              </div>
+              <h3 className="text-2xl font-bold text-gray-900 dark:text-white">
+                Duplicate Detected!
+              </h3>
+              <p className="text-gray-600 dark:text-gray-300">
+                It looks like this issue has already been reported nearby. Instead of creating a new report, you can vote for the existing one to help it get resolved faster!
+              </p>
+              <div className="w-full pt-4">
+                <button
+                  onClick={() => navigate(`/reports/${duplicateId}?fromDuplicate=true`)}
+                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-lg transition-all active:scale-95"
+                >
+                  View Original & Vote
+                </button>
+                <button
+                  onClick={() => setShowDuplicateModal(false)}
+                  className="w-full mt-3 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 text-sm font-medium"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );

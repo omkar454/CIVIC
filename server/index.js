@@ -15,6 +15,7 @@ import userRoutes from "./routes/user.js";
 import notificationsRoutes from "./routes/notifications.js";
 import adminVerificationRoutes from "./routes/adminVerification.js";
 import transferRoutes from "./routes/transfer.js"; // ✅ Import transfer routes
+import visionRoutes from "./routes/visionRoutes.js"; // ✅ Import vision routes
 import officerAnalyticsRoutes from "./routes/officerAnalytics.js";
 import citizenRoutes from "./routes/citizenAnalytics.js";
 import qrCodeRoutes from "./routes/qrCode.js";
@@ -44,6 +45,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/notifications", notificationsRoutes);
 app.use("/api/admin/verification", adminVerificationRoutes); // ✅ New verification route
 app.use("/api/transfer", transferRoutes); // ✅ Register transfer routes
+app.use("/api/vision", visionRoutes); // ✅ Vision Engine API
 app.use("/api/officer", officerAnalyticsRoutes);
 app.use("/api/citizen", citizenRoutes);
 app.use("/api/qr", qrCodeRoutes);
@@ -71,10 +73,14 @@ mongoose
 // -----------------------------
 // Graceful shutdown
 // -----------------------------
-process.on("SIGINT", () => {
+process.on("SIGINT", async () => {
   console.log("\nShutting down server...");
-  mongoose.connection.close(() => {
+  try {
+    await mongoose.connection.close();
     console.log("MongoDB disconnected");
     process.exit(0);
-  });
+  } catch (err) {
+    console.error("Error during shutdown:", err);
+    process.exit(1);
+  }
 });

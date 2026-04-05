@@ -89,7 +89,7 @@ const ReportSchema = new mongoose.Schema(
     description: { type: String, required: true, trim: true },
     category: {
       type: String,
-      required: true,
+      required: false, // AI now handles this
       enum: [
         "pothole",
         "garbage",
@@ -139,7 +139,14 @@ const ReportSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["Open", "Acknowledged", "In Progress", "Resolved", "Rejected"],
+      enum: [
+        "Open",
+        "Acknowledged",
+        "In Progress",
+        "Resolved",
+        "Rejected",
+        "Pending AI Review",
+      ],
       default: "Open",
     },
     pendingStatus: {
@@ -165,11 +172,24 @@ const ReportSchema = new mongoose.Schema(
 
     adminVerification: AdminVerificationSchema,
     citizenAdminVerification: CitizenAdminVerificationSchema,
+
+    // 🔹 AI Vision Engine Fields (Module 2)
+    detectedObjects: [{ type: String }],
+    visionSeverityScore: { type: Number, default: null },
+    isImageAuthentic: { type: Boolean, default: null },
+    officerValidationPass: { type: Boolean, default: null },
+    similarityScore: { type: Number, default: null },
+    officerValidationStatus: { type: String, default: "" },
+
+    // 🔹 AI Intelligence Fields (Module 1)
+    imageCategory: { type: String, default: "" },
+    textCategory: { type: String, default: "" },
+    isAIVerified: { type: Boolean, default: false },
+    textEmbedding: { type: [Number], default: [] },
+    imageEmbedding: { type: [Number], default: [] },
   },
   { timestamps: true }
 );
-
-ReportSchema.index({ location: "2dsphere" });
 
 // 🔹 Calculate Priority and SLA Logic
 ReportSchema.pre("save", function (next) {
@@ -211,5 +231,6 @@ ReportSchema.pre("save", function (next) {
   next();
 });
 
+ReportSchema.index({ location: "2dsphere" });
 
 export default mongoose.model("Report", ReportSchema);

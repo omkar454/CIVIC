@@ -38,24 +38,8 @@ function calculatePriority(severity, votes) {
 }
 
 /* ------------------------------------------------------------
-   🗺️ Geocode Address using OpenStreetMap
+   👮 SLA Cleanup & Management
 ------------------------------------------------------------ */
-async function geocodeAddress(address) {
-  try {
-    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(
-      address
-    )}`;
-    const res = await fetch(url, { headers: { "User-Agent": "CivicApp/1.0" } });
-    const data = await res.json();
-    if (data && data.length > 0) {
-      return [parseFloat(data[0].lon), parseFloat(data[0].lat)];
-    }
-    return null;
-  } catch (err) {
-    console.error("Geocoding error:", err);
-    return null;
-  }
-}
 
 router.get("/check-sla", auth("admin"), async (req, res) => {
   try {
@@ -135,37 +119,131 @@ router.get("/check-sla", auth("admin"), async (req, res) => {
    📝 Create Report (Citizen)
 ------------------------------------------------------------ */
 router.post("/", auth("citizen"), async (req, res) => {
+  console.log("📥 NEW REPORT SUBMISSION:", JSON.stringify(req.body, null, 2));
   try {
     const {
       title,
       description,
-      category,
-      severity, // ✅ no default value
       address = "",
       location,
       media,
       questionToOfficer = "",
+      visionSeverityScore,
+      detectedObjects,
+      isImageAuthentic,
+      imageCategory,
+      textCategory,
+      isAIVerified,
+      severity,
+      textEmbedding,
+      imageEmbedding,
     } = req.body;
 
-    if (!title || !description || !category)
-      return res.status(400).json({ message: "Missing required fields" });
+  if (!title || !description)
+    return res.status(400).json({ message: "Missing required fields" });
 
-    const department = mapCategoryToDepartment(category);
-    let coordinates = location?.coordinates;
+  let coordinates = location?.coordinates;
 
-    // ✅ Severity will remain 0 until admin updates it
-    const initialSeverity = severity && severity > 0 ? severity : 0;
+  // ------------------------------------------------------------
+  // 🧠 Module 1: Multimodal Duplicate Detection (Text + Image)
+  // ------------------------------------------------------------
+  function cosineSimilarity(vecA, vecB) {
+    if (!vecA || !vecB || vecA.length !== vecB.length || vecA.length === 0)
+      return 0;
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    for (let i = 0; i < vecA.length; i++) {
+        dotProduct += vecA[i] * vecB[i];
+        normA += vecA[i] * vecA[i];
+        normB += vecB[i] * vecB[i];
+    }
+    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+  }
 
-    // ✅ Priority score should not depend on unassigned severity
-    const initialPriorityScore =
-      initialSeverity > 0 ? calculatePriority(initialSeverity, 0) : 0;
+  if (coordinates && coordinates.length === 2 && (textEmbedding || imageEmbedding)) {
+    // 1. Find neighbors in 100m radius
+    const neighbors = await Report.find({
+      location: {
+        $nearSphere: {
+          $geometry: { type: "Point", coordinates: coordinates.map(Number) },
+          $maxDistance: 100, // 100 meters
+        },
+      },
+      status: { $in: ["Open", "Acknowledged", "In Progress", "Pending AI Review"] },
+    });
+
+    for (const n of neighbors) {
+      // Check 1: Text Semantic Similarity (> 0.85)
+      const textSim = cosineSimilarity(textEmbedding, n.textEmbedding);
+      
+      // Check 2: Visual Image Similarity (> 0.98)
+      const imageSim = cosineSimilarity(imageEmbedding, n.imageEmbedding);
+
+      if (textSim > 0.85 || imageSim > 0.98) {
+        return res.status(409).json({ 
+          message: "⚠️ DUPLICATE FOUND: This issue was already reported nearby.", 
+          duplicateId: n._id,
+          matchType: imageSim > 0.98 ? "Visual Match" : "Semantic Match"
+        });
+      }
+    }
+  }
+
+    // ------------------------------------------------------------
+    // 🧠 Module 1: Zero-Touch Category Mapping & Fast Track
+    // ------------------------------------------------------------
+    let finalCategory = imageCategory || textCategory || "other";
+    let finalStatus = "Open";
+    let autoVerify = null;
+    
+    // Force type casting for accuracy
+    const aiVerified = String(isAIVerified) === "true";
+    const vScore = Number(visionSeverityScore) || 0;
+    let initialSeverity = Number(severity) || 0;
+
+    console.log("💎 AI ENGINE INPUT:", { aiVerified, imageCategory, textCategory, vScore });
+
+    // ✅ AI Consensus Logic
+    if (aiVerified && imageCategory) {
+      finalCategory = imageCategory;
+      finalStatus = "Acknowledged";
+      
+      // Force assign AI severity from Model Score if verified
+      if (vScore > 0) {
+        initialSeverity = Math.min(5, Math.max(1, Math.round(vScore)));
+      } else {
+         initialSeverity = 3; // AI Verified but score missing fallback
+      }
+
+      autoVerify = {
+        verified: true,
+        note: `Zero-Touch AI Verified. Consensus: ${imageCategory}. AI Severity: ${vScore}`,
+        verifiedAt: new Date(),
+        history: [{
+          action: "approved",
+          note: "System-level AI Consensus verification.",
+          createdAt: new Date()
+        }]
+      };
+
+      console.log("✅ FAST TRACK TRIGGERED:", { finalStatus, initialSeverity });
+    } else {
+      finalStatus = (imageCategory || textCategory) ? "Pending AI Review" : "Open";
+      console.log("⚠️ MANUAL REVIEW REQUIRED. Status:", finalStatus);
+    }
+
+    const department = mapCategoryToDepartment(finalCategory);
+    const initialPriorityScore = initialSeverity > 0 ? (initialSeverity * 10) : 0;
 
     // Case 1️⃣: Manual address report
     if (address && (!coordinates || coordinates.length !== 2)) {
-      const textReport = await TextAddressReport.create({
+      const textReport = await Report.create({
         title,
         description,
-        category,
+        category: finalCategory,
+        status: finalStatus,
+        citizenAdminVerification: autoVerify,
         severity: initialSeverity,
         department,
         reporter: req.user.id,
@@ -173,46 +251,36 @@ router.post("/", auth("citizen"), async (req, res) => {
         media,
         questionToOfficer: questionToOfficer.trim() || "",
         priorityScore: initialPriorityScore,
+        visionSeverityScore: vScore,
+        detectedObjects,
+        isImageAuthentic,
+        imageCategory,
+        textCategory,
+        isAIVerified: aiVerified,
+        textEmbedding,
+        imageEmbedding,
+        statusHistory: aiVerified ? [{
+          status: "Acknowledged",
+          note: `Zero-Touch AI Verified. AI Severity: ${initialSeverity}`,
+          at: new Date()
+        }] : []
       });
 
-      if (questionToOfficer.trim()) {
-        textReport.comments.push({
-          message: questionToOfficer.trim(),
-          by: req.user.id,
-        });
-        await textReport.save();
-      }
-
-      const officers = await User.find({ role: "officer", department });
-      if (officers.length) {
-        const notifications = officers.map((o) => ({
-          user: o._id,
-          message: `📝 New ${category} report with manual address submitted.`,
-        }));
-        await Notification.insertMany(notifications);
-      }
-
       return res.status(201).json({
-        message: "Manual address report submitted",
+        message: aiVerified ? "Report auto-verified" : "Report submitted",
         report: textReport,
       });
     }
 
     // Case 2️⃣: Geocoded report
-    if ((!coordinates || coordinates.length !== 2) && address) {
-      const geo = await geocodeAddress(address);
-      if (geo) coordinates = geo;
-    }
-
-    if (!coordinates || coordinates.length !== 2)
-      return res
-        .status(400)
-        .json({ message: "Valid coordinates or address required." });
+    // (Geocoding now handled purely by UI before submission)
 
     const report = await Report.create({
       title,
       description,
-      category,
+      category: finalCategory,
+      status: finalStatus,
+      citizenAdminVerification: autoVerify,
       severity: initialSeverity,
       department,
       reporter: req.user.id,
@@ -220,9 +288,22 @@ router.post("/", auth("citizen"), async (req, res) => {
       media,
       location: { type: "Point", coordinates: coordinates.map(Number) },
       priorityScore: initialPriorityScore,
+      visionSeverityScore: vScore,
+      detectedObjects,
+      isImageAuthentic,
+      imageCategory,
+      textCategory,
+      isAIVerified: aiVerified,
+      textEmbedding,
+      imageEmbedding,
+      statusHistory: aiVerified ? [{
+        status: "Acknowledged",
+        note: `Zero-Touch AI Verified. AI Severity: ${initialSeverity}`,
+        at: new Date()
+      }] : []
     });
 
-    if (questionToOfficer.trim()) {
+    if (questionToOfficer && questionToOfficer.trim()) {
       report.comments.push({
         message: questionToOfficer.trim(),
         by: req.user.id,
@@ -230,16 +311,21 @@ router.post("/", auth("citizen"), async (req, res) => {
       await report.save();
     }
 
-    const officers = await User.find({ role: "officer", department });
-    if (officers.length) {
-      const notifications = officers.map((o) => ({
-        user: o._id,
-        message: `📍 New ${category} report assigned to your department.`,
-      }));
-      await Notification.insertMany(notifications);
+    if (aiVerified) {
+      const officers = await User.find({ role: "officer", department });
+      if (officers.length) {
+        const notifications = officers.map((o) => ({
+          user: o._id,
+          message: `📍 New ${finalCategory} report assigned via AI consensus.`,
+        }));
+        await Notification.insertMany(notifications);
+      }
     }
 
-    res.status(201).json({ message: "Geocoded report submitted", report });
+    res.status(201).json({ 
+      message: aiVerified ? "AI mapped successfully" : "AI mismatch: Assigned to Admin Review", 
+      report 
+    });
   } catch (err) {
     console.error("Create report error:", err);
     res.status(500).json({ message: "Server error" });
@@ -251,7 +337,7 @@ router.post("/", auth("citizen"), async (req, res) => {
 ------------------------------------------------------------ */
 router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
   try {
-    const { status, comment, media } = req.body;
+    const { status, comment, media, officerValidationPass, similarityScore, officerValidationStatus } = req.body;
     const user = req.user;
 
     // Fetch report with reporter and assignedTo
@@ -281,18 +367,47 @@ router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
       if (status === "In Progress") {
         report.status = "In Progress";
       } else if (status === "Resolved" || status === "Rejected") {
-        // Send for admin verification
-        report.pendingStatus = status;
+        // 🧠 AI Automation Logic (Module 2: Zero-Touch Resolution) 🧠
+        const isFraud = similarityScore > 0.98;
+        const isVerifiedSuccess = (officerValidationPass === true) && (similarityScore >= 0.7) && (similarityScore <= 0.98);
 
-        // Initialize adminVerification if missing
-        if (!report.adminVerification) {
+        if (isFraud) {
+          // 🚨 AUTO-REJECT: Fraudulent duplicate photo detected
+          report.status = "Rejected";
+          report.pendingStatus = null;
           report.adminVerification = {
-            verified: null,
-            note: "",
-            verifiedAt: null,
-            history: [],
+            verified: false,
+            note: "AI AUTO-REJECTION: Duplicate photo fraud detected (>98% similarity).",
+            verifiedAt: new Date(),
+            history: [{ action: "auto-rejected", note: "AI Fraud Detection", createdAt: new Date() }]
           };
+        } else if (isVerifiedSuccess) {
+          // ✅ AUTO-RESOLVE: Highly certain location match + YOLO audit pass
+          report.status = "Resolved";
+          report.pendingStatus = null;
+          report.adminVerification = {
+            verified: true,
+            note: `AI AUTO-RESOLUTION: High confidence match (${(similarityScore * 100).toFixed(1)}%) + Resolution Audit Pass.`,
+            verifiedAt: new Date(),
+            history: [{ action: "auto-approved", note: "AI Work Validation", createdAt: new Date() }]
+          };
+        } else {
+          // 📋 MANUAL REVIEW: Uncertain location or YOLO flagged an issue
+          report.pendingStatus = status;
+          if (!report.adminVerification) {
+            report.adminVerification = {
+              verified: null,
+              note: "",
+              verifiedAt: null,
+              history: [],
+            };
+          }
         }
+
+        // 🧠 Save AI Validation Results 🧠
+        if (officerValidationPass !== undefined) report.officerValidationPass = officerValidationPass;
+        if (similarityScore !== undefined) report.similarityScore = similarityScore;
+        if (officerValidationStatus !== undefined) report.officerValidationStatus = officerValidationStatus;
       } else if (status === "Open" || status === "Acknowledged") {
         report.status = status;
       } else {
@@ -311,15 +426,17 @@ router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
         at: new Date(),
       });
 
-      // Notify all admins if pending verification
+      // Notify admins ONLY if manual verification is actually required (AI was uncertain)
       if (status === "Resolved" || status === "Rejected") {
-        const admins = await User.find({ role: "admin" });
-        if (admins.length > 0) {
-          const notifications = admins.map((a) => ({
-            user: a._id,
-            message: `📋 Report "${report.title}" marked as ${status} by officer. Awaiting your verification.`,
-          }));
-          await Notification.insertMany(notifications);
+        if (report.pendingStatus) {
+          const admins = await User.find({ role: "admin" });
+          if (admins.length > 0) {
+            const notifications = admins.map((a) => ({
+              user: a._id,
+              message: `📋 [Manual Review Required] Report "${report.title}" marked as ${status}. AI was uncertain of location/resolution.`,
+            }));
+            await Notification.insertMany(notifications);
+          }
         }
       }
     }

@@ -136,6 +136,12 @@ const TextAddressReportSchema = new mongoose.Schema(
     officerProofMedia: [{ url: String, mime: String }],
     adminVerification: AdminVerificationSchema,
     citizenAdminVerification: CitizenAdminVerificationSchema,
+
+    // 🔹 AI Vision Engine Fields (Module 2)
+    detectedObjects: [{ type: String }],
+    visionSeverityScore: { type: Number, default: null },
+    isImageAuthentic: { type: Boolean, default: null },
+    officerValidationPass: { type: Boolean, default: null },
   },
   { timestamps: true }
 );

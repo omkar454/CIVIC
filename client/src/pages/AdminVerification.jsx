@@ -1,5 +1,6 @@
 // pages/AdminVerification.jsx
 import { useEffect, useState } from "react";
+import axios from "axios"; 
 import API from "../services/api";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -22,7 +23,21 @@ export default function AdminVerification() {
   const [loading, setLoading] = useState(true);
   const [selectedSeverity, setSelectedSeverity] = useState({});
   const [adminNotes, setAdminNotes] = useState({});
+  const [selectedCategories, setSelectedCategories] = useState({});
   const [actionLoading, setActionLoading] = useState(null);
+
+  const categories = [
+    "pothole",
+    "garbage",
+    "streetlight",
+    "water-logging",
+    "toilet",
+    "water-supply",
+    "drainage",
+    "waste-management",
+    "park",
+    "other",
+  ];
 
   // ---------------- Fetch Pending Reports ----------------
   const fetchPendingReports = async () => {
@@ -35,17 +50,23 @@ export default function AdminVerification() {
         data.map(async (r) => {
           if (r.location?.coordinates?.length === 2) {
             const [lng, lat] = r.location.coordinates;
-            try {
-              const geoRes = await API.get(
-                `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
-              );
-              r.address = geoRes.data.display_name || "";
-              r.lat = lat;
-              r.lng = lng;
-            } catch {
-              r.address = "";
-              r.lat = lat;
-              r.lng = lng;
+            r.lat = lat;
+            r.lng = lng;
+
+            // 📍 ONLY reverse-geocode if the address is missing or is just coordinates
+            if (!r.address || r.address.startsWith("Lat:")) {
+              try {
+                // 🌍 UI-Side Reverse Geocoding (Direct to Nominatim)
+                const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
+                const response = await fetch(url);
+                if (response.ok) {
+                  const geoData = await response.json();
+                  r.address = geoData.display_name || r.address;
+                }
+              } catch (err) {
+                console.warn("UI Reverse geocoding failed for Admin view:", err.message);
+                // Keep existing r.address if fetch fails
+              }
             }
           } else {
             // Text-based report
@@ -55,6 +76,25 @@ export default function AdminVerification() {
           return r;
         })
       );
+
+      // Auto-populate AI suggestions into states
+      const initialSeverities = {};
+      const initialCategories = {};
+      withAddress.forEach((r) => {
+        if (r.visionSeverityScore) {
+          initialSeverities[r._id] = Math.round(r.visionSeverityScore);
+        }
+        // Use all detected objects if available, otherwise fallback to imageCategory
+        if (r.detectedObjects && r.detectedObjects.length > 0) {
+          initialCategories[r._id] = r.detectedObjects;
+        } else if (r.imageCategory) {
+          initialCategories[r._id] = [r.imageCategory];
+        } else {
+          initialCategories[r._id] = [];
+        }
+      });
+      setSelectedSeverity((prev) => ({ ...prev, ...initialSeverities }));
+      setSelectedCategories((prev) => ({ ...prev, ...initialCategories }));
 
       setReports(withAddress);
     } catch (err) {
@@ -69,10 +109,21 @@ export default function AdminVerification() {
     fetchPendingReports();
   }, []);
 
+  const handleCategoryToggle = (reportId, category) => {
+    setSelectedCategories((prev) => {
+      const current = prev[reportId] || [];
+      const newCats = current.includes(category)
+        ? current.filter((c) => c !== category)
+        : [...current, category];
+      return { ...prev, [reportId]: newCats };
+    });
+  };
+
   // ---------------- Admin Verification ----------------
   const handleAdminDecision = async (reportId, isApproved) => {
     const note = adminNotes[reportId];
     const severity = selectedSeverity[reportId];
+    const category = selectedCategory[reportId];
 
     if (!note?.trim()) {
       alert("Please provide a note for verification decision.");
@@ -83,6 +134,11 @@ export default function AdminVerification() {
       alert("Please select severity (1–5) before approving.");
       return;
     }
+    
+    if (isApproved && categoriesArr.length === 0) {
+      alert("Please select at least one category before approving.");
+      return;
+    }
 
     setActionLoading(reportId);
     try {
@@ -90,14 +146,21 @@ export default function AdminVerification() {
         approve: isApproved,
         note,
         severity: isApproved ? Number(severity) : undefined,
+        categories: isApproved ? categoriesArr : undefined,
       });
 
+      // Cleanup local state
       setSelectedSeverity((prev) => {
         const copy = { ...prev };
         delete copy[reportId];
         return copy;
       });
       setAdminNotes((prev) => {
+        const copy = { ...prev };
+        delete copy[reportId];
+        return copy;
+      });
+      setSelectedCategories((prev) => {
         const copy = { ...prev };
         delete copy[reportId];
         return copy;
@@ -165,6 +228,17 @@ export default function AdminVerification() {
             <p className="text-gray-700 dark:text-gray-300">
               {report.description}
             </p>
+
+            {/* NEW: Reverse-Geocoded Address Display */}
+            {report.address && (
+              <div className="flex items-start gap-2 p-2 bg-blue-50/50 dark:bg-blue-900/10 rounded-lg border border-blue-100 dark:border-blue-900/50">
+                <span className="text-blue-600 dark:text-blue-400 mt-0.5">📍</span>
+                <span className="text-sm font-medium text-blue-800 dark:text-blue-300">
+                  {report.address}
+                </span>
+              </div>
+            )}
+
             <p className="text-sm text-gray-500 dark:text-gray-400">
               Reported by: {report.reporter?.name || "Unknown"} (
               {report.reporter?.email || "N/A"}) |{" "}
@@ -203,6 +277,121 @@ export default function AdminVerification() {
                 </div>
               </div>
             )}
+
+            {/* AI Analysis Section (Module 2) */}
+            <div className="bg-blue-50 dark:bg-blue-900/30 p-4 rounded-xl border border-blue-100 dark:border-blue-800 space-y-3 pb-6">
+              <h3 className="text-lg font-bold text-blue-800 dark:text-blue-300 flex items-center gap-2">
+                🧠 Vision Engine Results
+              </h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Authenticity / Trust Index */}
+                <div className="flex flex-col gap-1">
+                  <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Trust Level (Anti-Fraud)</span>
+                  {report.isImageAuthentic === true ? (
+                    <Badge className="bg-green-100 text-green-700 hover:bg-green-100 w-fit">
+                      ✅ Authentic / High Text-Image Match
+                    </Badge>
+                  ) : report.isImageAuthentic === false ? (
+                    <Badge className="bg-red-100 text-red-700 hover:bg-red-100 w-fit">
+                      ⚠️ Warning: Potential Fraud / Misleading Media
+                    </Badge>
+                  ) : (
+                    <Badge className="bg-gray-100 text-gray-700 hover:bg-gray-100 w-fit">
+                      Analyze Pending
+                    </Badge>
+                  )}
+                </div>
+
+                {/* AI Severity */}
+                <div className="flex flex-col gap-1">
+                  <span className="text-sm font-medium text-gray-600 dark:text-gray-400">AI Severity Suggestion</span>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xl font-bold ${
+                      (report.visionSeverityScore || 0) >= 4 ? "text-red-600" : 
+                      (report.visionSeverityScore || 0) >= 3 ? "text-orange-500" : "text-green-600"
+                    }`}>
+                      {report.visionSeverityScore || "N/A"}/5
+                    </span>
+                  </div>
+                </div>
+
+                {/* AI Consensus Breakdown (Added for Admin Clarity) */}
+                {report.status === "Pending AI Review" && (
+                  <div className="md:col-span-2 mt-2 p-3 bg-white dark:bg-gray-800 rounded-lg border border-orange-100 dark:border-orange-900/30">
+                    <h4 className="text-xs font-bold text-orange-700 dark:text-orange-400 mb-2 flex items-center gap-1">
+                      🔍 AI Consensus Breakdown (Reason for Flagging)
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="flex flex-col">
+                        <span className="text-[10px] text-gray-400 uppercase font-bold">📸 Image Brain (YOLO)</span>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-blue-600 border-blue-200 bg-blue-50 px-2 py-0">
+                            {report.imageCategory || "None"}
+                          </Badge>
+                          <span className="text-[10px] text-green-600 font-medium">Detected Pattern</span>
+                        </div>
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[10px] text-gray-400 uppercase font-bold">✍️ Text Brain (CLIP)</span>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline" className="text-purple-600 border-purple-200 bg-purple-50 px-2 py-0">
+                            {report.textCategory || "None"}
+                          </Badge>
+                          {report.imageCategory !== report.textCategory && (
+                            <span className="text-[10px] text-orange-600 font-medium whitespace-nowrap">⚠ Category Mismatch</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-2 italic">
+                      * System Explanation: This report was flagged because the vision engine and the text description do not agree on the category. Please select the correct one manually.
+                    </p>
+                  </div>
+                )}
+
+                {/* Officer Work Validation (Siamese) */}
+                {["Resolved", "Rejected"].includes(report.pendingStatus) && (
+                  <div className="flex flex-col gap-1 md:col-span-2 pt-2 border-t border-blue-100 dark:border-blue-800">
+                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Officer Work Validation (Siamese AI)</span>
+                    <div className="flex items-center gap-3">
+                      {report.officerValidationPass === true ? (
+                        <Badge className="bg-green-600 text-white border-0">
+                          ✅ Location Match Verified
+                        </Badge>
+                      ) : report.officerValidationPass === false ? (
+                        <Badge className="bg-red-600 text-white border-0">
+                          ⚠️ Warning: Location Mismatch Detected
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-gray-400">
+                          Validation Not Performed
+                        </Badge>
+                      )}
+                      {report.similarityScore && (
+                        <span className="text-xs text-blue-700 dark:text-blue-300 font-mono">
+                          (Similarity: {(report.similarityScore * 100).toFixed(1)}%)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Detected Objects Tags */}
+              {report.detectedObjects?.length > 0 && (
+                <div className="pt-2 border-t border-blue-100 dark:border-blue-800">
+                  <span className="text-sm font-medium text-gray-600 dark:text-gray-400 block mb-2">Detected AI Tags:</span>
+                  <div className="flex flex-wrap gap-2">
+                    {report.detectedObjects.map((obj, i) => (
+                      <Badge key={i} variant="outline" className="bg-white dark:bg-gray-800 text-blue-700 dark:text-blue-300 border-blue-200">
+                        #{obj}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Map & Coordinates Section */}
             {report.lat && report.lng && (
@@ -301,25 +490,65 @@ export default function AdminVerification() {
                 </Button>
               </div>
 
-              <div className="mt-2">
-                <label className="font-medium mr-2">Severity (1–5):</label>
-                <select
-                  className="border rounded px-2 py-1 dark:bg-gray-700 dark:text-white"
-                  value={selectedSeverity[report._id] || ""}
-                  onChange={(e) =>
-                    setSelectedSeverity({
-                      ...selectedSeverity,
-                      [report._id]: e.target.value,
-                    })
-                  }
-                >
-                  <option value="">Select</option>
-                  {[1, 2, 3, 4, 5].map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
+              <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Severity */}
+                <div className="flex flex-col">
+                  <label className="font-medium mb-1">Severity (1–5):</label>
+                  <select
+                    className="border rounded px-2 py-1 dark:bg-gray-700 dark:text-white"
+                    value={selectedSeverity[report._id] || ""}
+                    onChange={(e) =>
+                      setSelectedSeverity({
+                        ...selectedSeverity,
+                        [report._id]: e.target.value,
+                      })
+                    }
+                  >
+                    <option value="">Select</option>
+                    {[1, 2, 3, 4, 5].map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Multi-Category Selection Grid */}
+                <div className="flex flex-col md:col-span-2">
+                  <label className="font-medium mb-2 flex items-center gap-2 text-blue-800 dark:text-blue-300">
+                    Assign Categories (Multi-Select):
+                    {report.hasMultipleObjects && (
+                      <Badge variant="destructive" className="animate-pulse">AI: Multi-Issue Detected</Badge>
+                    )}
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg border border-gray-100 dark:border-gray-800">
+                    {categories.map((cat) => {
+                      const isSelected = (selectedCategories[report._id] || []).includes(cat);
+                      const isAIDetected = (report.detectedObjects || []).includes(cat);
+                      
+                      return (
+                        <div 
+                          key={cat} 
+                          className={`flex items-center gap-2 p-1.5 rounded-md transition-colors cursor-pointer border ${
+                            isSelected ? "bg-blue-100 dark:bg-blue-900/40 border-blue-300" : "border-transparent hover:bg-gray-100 dark:hover:bg-gray-800"
+                          }`}
+                          onClick={() => handleCategoryToggle(report._id, cat)}
+                        >
+                          <input 
+                            type="checkbox" 
+                            checked={isSelected}
+                            readOnly
+                            className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                          />
+                          <span className={`text-[13px] capitalize ${isSelected ? "font-bold text-blue-700 dark:text-blue-200" : "text-gray-600 dark:text-gray-400"}`}>
+                            {cat}
+                          </span>
+                          {isAIDetected && <span className="text-[9px] bg-blue-500 text-white px-1 rounded ml-auto font-bold uppercase">AI</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             </div>
           </CardContent>

@@ -237,34 +237,16 @@ router.get("/", auth(["admin", "officer"]), async (req, res) => {
       .populate("adminVerification.verifiedBy", "name")
       .sort({ createdAt: -1 });
 
-    // Enhance each report with coordinates and reverse-geocoded address
-    const enhancedTransfers = await Promise.all(
-      transfers.map(async (t) => {
-        const report = t.report;
-
-        if (report?.location?.coordinates?.length === 2) {
-          const [lng, lat] = report.location.coordinates;
-          t.report.lat = lat;
-          t.report.lng = lng;
-
-          // Only reverse-geocode if address is empty
-          if (!report.address || report.address.trim() === "") {
-            try {
-              const geoRes = await fetch(
-                `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
-              );
-              const geoData = await geoRes.json();
-              t.report.address = geoData.display_name || "";
-            } catch (err) {
-              console.error("Reverse geocode failed:", err.message);
-              t.report.address = "";
-            }
-          }
-        }
-
-        return t;
-      })
-    );
+    // Enhance each report with coordinates (UI handles address display)
+    const enhancedTransfers = transfers.map((t) => {
+      const report = t.report;
+      if (report?.location?.coordinates?.length === 2) {
+        const [lng, lat] = report.location.coordinates;
+        t.report.lat = lat;
+        t.report.lng = lng;
+      }
+      return t;
+    });
 
     res.json(enhancedTransfers);
   } catch (err) {

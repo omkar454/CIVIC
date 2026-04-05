@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+ultralytics
+torch
+transformers
+Pillow
+requests
+python-multipart
+sentence-transformers
+scikit-learn

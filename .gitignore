@@ -1,0 +1,34 @@
+# 📌 Environments & Secrets
+venv/
+.env
+.idea/
+.vscode/
+
+# 📦 Dependencies
+node_modules/
+client/dist/
+client/build/
+server/uploads/
+
+# 🧠 AI & Machine Learning
+# Allowing .pt weights (since they are small)
+!*.pt
+runs/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.ipynb_checkpoints/
+ml-services/vision-engine/__pycache__/
+ml-services/vision-engine/runs/
+*.zip
+*.tar
+*.gz
+
+# 🔍 System Junk
+.DS_Store
+Thumbs.db
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+error.txt
