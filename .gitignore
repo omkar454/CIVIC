@@ -11,11 +11,11 @@ client/build/
 server/uploads/
 
 # 🧠 AI & Machine Learning
-# Allowing .pt weights (since they are small)
-!*.pt
-runs/
-__pycache__/
-*.pyc
+# Allowing the ENTIRE runs directory as requested
+!ml-services/vision-engine/runs/
+!runs/
+!best.pt
+!yolov8n.pt
 *.pyo
 *.pyd
 .ipynb_checkpoints/
