@@ -20,7 +20,7 @@ server/uploads/
 *.pyd
 .ipynb_checkpoints/
 ml-services/vision-engine/__pycache__/
-ml-services/vision-engine/runs/
+!ml-services/vision-engine/runs/
 *.zip
 *.tar
 *.gz
