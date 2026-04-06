@@ -123,7 +123,7 @@ export default function AdminVerification() {
   const handleAdminDecision = async (reportId, isApproved) => {
     const note = adminNotes[reportId];
     const severity = selectedSeverity[reportId];
-    const category = selectedCategory[reportId];
+    const categoriesArr = selectedCategories[reportId] || []; // ✅ CORRECTED
 
     if (!note?.trim()) {
       alert("Please provide a note for verification decision.");

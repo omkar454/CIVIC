@@ -59,7 +59,7 @@ const AdminVerificationSchema = new mongoose.Schema({
   history: [
     {
       admin: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-      action: { type: String, enum: ["approved", "rejected"] },
+      action: { type: String, enum: ["approved", "rejected", "auto-approved", "auto-rejected"] },
       note: { type: String },
       createdAt: { type: Date, default: Date.now },
     },
@@ -73,7 +73,7 @@ const CitizenAdminVerificationSchema = new mongoose.Schema({
   history: [
     {
       admin: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-      action: { type: String, enum: ["approved", "rejected"] },
+      action: { type: String, enum: ["approved", "rejected", "auto-approved", "auto-rejected"] },
       note: { type: String },
       createdAt: { type: Date, default: Date.now },
     },

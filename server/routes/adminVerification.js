@@ -1,5 +1,6 @@
 // routes/adminVerification.js
 import express from "express";
+import mongoose from "mongoose";
 import Report from "../models/Report.js";
 import TextAddressReport from "../models/TextAddressReport.js";
 import Notification from "../models/Notification.js";
@@ -32,7 +33,7 @@ const categoryToDept = {
   "waste-management": "waste-management",
   park: "park",
   other: "general",
-};import mongoose from "mongoose";
+};
 
 /* ------------------------------------------------------------------
    🧾 ADMIN VERIFICATION FOR CITIZEN REPORTS
