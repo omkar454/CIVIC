@@ -68,7 +68,8 @@ const STATUS_COLORS = {
 export default function Home() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
-   const [userData, setUserData] = useState(null);
+  const [userData, setUserData] = useState(null);
+  const [selectedStatuses, setSelectedStatuses] = useState(["Open", "Acknowledged", "In Progress"]);
 
   const navigate = useNavigate();
   const token = localStorage.getItem("accessToken");
@@ -158,40 +159,10 @@ useEffect(() => {
           // Only geocoded reports
           if (!r.lat || !r.lng) return false;
 
-          // Pending admin approval → include
-          if (
-            ["Resolved", "Rejected"].includes(r.status) &&
-            r.adminVerification?.verified === null
-          ) {
-            return true;
-          }
-
-          // Admin approved officer action → exclude
-          if (
-            ["Resolved", "Rejected"].includes(r.status) &&
-            r.adminVerification?.verified === true
-          ) {
-            return false;
-          }
-
-          // Admin disapproved officer action → re-add to heatmap
-          if (
-            ["Resolved", "Rejected"].includes(r.status) &&
-            r.adminVerification?.verified === false
-          ) {
-            return true;
-          }
-
-          // Open/In Progress → include
-          if (
-            r.status === "Open" ||
-            r.status === "Acknowledged" ||
-            r.status === "In Progress"
-          ) {
-            return true;
-          }
-
-          return false;
+          // Only include reports based on user-selected status filters
+          return (
+             selectedStatuses.includes(r.status)
+          );
         })
         .map((r) => [r.lat, r.lng, r.severity / 5]),
     [reports]
@@ -285,6 +256,34 @@ useEffect(() => {
         </div>
       )}
 
+      {/* Heatmap Filter UI */}
+      <div className="mb-4 flex flex-wrap items-center gap-4 p-3 bg-white dark:bg-gray-800 rounded shadow-sm border border-gray-100 dark:border-gray-700">
+        <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Filter Map By Status:</span>
+        {["Open", "Acknowledged", "In Progress", "Resolved", "Rejected"].map((st) => (
+          <label key={st} className="flex items-center gap-2 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={selectedStatuses.includes(st)}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  setSelectedStatuses([...selectedStatuses, st]);
+                } else {
+                  setSelectedStatuses(selectedStatuses.filter((s) => s !== st));
+                }
+              }}
+              className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-600 dark:text-gray-400 group-hover:text-blue-600">{st}</span>
+          </label>
+        ))}
+        <button 
+          onClick={() => setSelectedStatuses(["Open", "Acknowledged", "In Progress", "Resolved", "Rejected"])}
+          className="text-xs text-blue-500 hover:underline ml-auto"
+        >
+          Show All
+        </button>
+      </div>
+
       {/* Heatmap */}
       {heatmapPoints.length > 0 && (
         <div className="mb-6 h-96 rounded shadow overflow-hidden">
@@ -300,7 +299,7 @@ useEffect(() => {
               showLegend
             />
             {reports
-              .filter((r) => r.lat && r.lng)
+              .filter((r) => r.lat && r.lng && selectedStatuses.includes(r.status))
               .map((r) => (
                 <Marker key={r._id} position={[r.lat, r.lng]} icon={redIcon}>
                   <Popup minWidth={250}>

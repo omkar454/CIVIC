@@ -91,14 +91,14 @@ router.post("/:id/verify", auth("admin"), async (req, res) => {
       // ------------------------------------------------------------------
       // ✂️ SPLIT-TASK LOGIC: Handling Multiple Categories
       // ------------------------------------------------------------------
-      
+
       // 1. Process the First Category (Update Original Report)
       const primaryCategory = categories[0];
       report.category = primaryCategory;
       report.department = department || categoryToDept[primaryCategory] || "general";
       report.severity = Number(severity);
       report.status = "Acknowledged";
-      
+
       // SLA & Priority for Primary
       report.slaStartDate = new Date();
       report.slaDays = report.severity >= 4 ? 2 : (report.severity >= 3 ? 4 : 7);
@@ -118,13 +118,13 @@ router.post("/:id/verify", auth("admin"), async (req, res) => {
         for (let i = 1; i < categories.length; i++) {
           const extraCat = categories[i];
           const clonedData = report.toObject();
-          
+
           // Remove unique Mongo fields we want to recreate
           delete clonedData._id;
           delete clonedData.id;
           delete clonedData.createdAt;
           delete clonedData.updatedAt;
-          
+
           const newReport = new Report({
             ...clonedData,
             category: extraCat,
@@ -181,8 +181,7 @@ router.post("/:id/verify", auth("admin"), async (req, res) => {
 
       await createNotification(
         report.reporter._id,
-        `❌ Your report "${report.title}" was rejected by admin. Reason: ${
-          note || "No note provided"
+        `❌ Your report "${report.title}" was rejected by admin. Reason: ${note || "No note provided"
         }`
       );
     }

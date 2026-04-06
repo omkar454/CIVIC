@@ -1,6 +1,6 @@
 import React,{ useState, useEffect } from "react";
 import axios from "axios";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import API from "../services/api";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
@@ -18,6 +18,7 @@ const redIcon = new L.Icon({
 });
 
 export default function ReportDetail() {
+  const navigate = useNavigate();
   const { id } = useParams();
   const [searchParams] = useSearchParams();
   const fromDuplicate = searchParams.get("fromDuplicate") === "true";
@@ -202,6 +203,33 @@ function SLASection({ report }) {
     fetchReport();
   }, [id]);
 
+  // 🤖 AI Automation: Auto-update to "In Progress" when Officer views it
+  useEffect(() => {
+    const autoInProgress = async () => {
+      if (
+        report &&
+        report.status === "Acknowledged" &&
+        role === "officer" &&
+        normalize(report.department) === normalize(userDept)
+      ) {
+        console.log("🤖 AI Automation: Auto-updating status to In Progress...");
+        try {
+          await API.put(`/reports/${id}/status`, {
+            status: "In Progress",
+            note: "System: Status updated to 'In Progress' as Officer viewed the report details.",
+            media: []
+          });
+          // Silently refresh to show new status
+          const res = await API.get(`/reports/${id}`);
+          setReport({ ...res.data, lat: res.data.location.coordinates[1], lng: res.data.location.coordinates[0] });
+        } catch (err) {
+          console.error("Auto-status update failed:", err);
+        }
+      }
+    };
+    if (!loading && report) autoInProgress();
+  }, [report?.status, role, userDept, id, loading]);
+
 const generateQRCode = async () => {
   try {
     const type = report.isTextReport ? "text-report" : "report";
@@ -291,13 +319,13 @@ const generateQRCode = async () => {
     try {
       // 🧠 Siamese AI Cross-Verification (Module 2) 🧠
       let siameseData = {};
-      if (status === "Resolved" && report.media?.length > 0 && uploadedUrls.length > 0) {
-        console.log("👀 Requesting AI Work Validation...");
+      if ((status === "Resolved" || status === "Rejected") && report.media?.length > 0 && uploadedUrls.length > 0) {
+        console.log(`👀 Requesting AI ${status} Validation...`);
         try {
           const siameseRes = await API.post("/vision/validate", {
             beforeImageUrl: report.media[0].url,
             afterImageUrl: uploadedUrls[0].url,
-            originalClass: report.category // <-- NEW: Passing the issue type for the audit
+            originalClass: report.category
           });
           siameseData = {
             officerValidationPass: siameseRes.data.officerValidationPass,
@@ -325,14 +353,16 @@ const generateQRCode = async () => {
         
         let aiMsg = "";
         if (sim > 0.98) {
-          aiMsg = "🚨 AI ALERT: Duplicate photo detected. Work has been AUTO-REJECTED for potential fraud.";
-        } else if (pass && sim >= 0.7) {
-          aiMsg = `✅ AI AUTO-RESOLVED: High confidence location match (${(sim * 100).toFixed(1)}%) + Audit Pass. No admin review required.`;
+          aiMsg = "🚨 AI ALERT: Duplicate photo detected. Work attempt BLOCKED for potential fraud.";
+        } else if (sim < 0.3) {
+          aiMsg = `📍 AI REJECTED: Location mismatch detected (${(sim * 100).toFixed(1)}%). Please visit the correct site.`;
+        } else if (sim >= 0.7 && ((status === "Resolved" && pass) || (status === "Rejected" && !pass))) {
+          aiMsg = `⚡ AI ZERO-TOUCH: Success! High-confidence match + Audit Agreement (${(sim * 100).toFixed(1)}%). Report finalized without admin review.`;
         } else {
-          aiMsg = "📋 AI UNCERTAIN: Sent to Admin Desk for manual verification of location/work.";
+          aiMsg = "📋 AI UNCERTAIN: Update submitted. Sent to Admin Desk for manual location/site verification.";
         }
           
-        alert(`Status Update: ${aiMsg}`);
+        alert(`Action Result: ${aiMsg}`);
       } else {
         alert(`Status updated to "${status}" successfully!`);
       }
@@ -404,13 +434,22 @@ const generateQRCode = async () => {
           <h1 className="text-3xl font-bold text-blue-700 dark:text-blue-400">
             {report.title}
           </h1>
-          <Badge
-            className={`rounded-full px-3 py-1 ${
-              statusColor[report.status] || "bg-gray-100 text-gray-700"
-            }`}
-          >
-            {report.status}
-          </Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              className={`rounded-full px-3 py-1 ${
+                statusColor[report.status] || "bg-gray-100 text-gray-700"
+              }`}
+            >
+              {report.status}
+            </Badge>
+            <Button
+              onClick={() => navigate(`/reports/${id}/track`)}
+              className="bg-purple-600 hover:bg-purple-700 text-white rounded-full flex items-center gap-1"
+              size="sm"
+            >
+              Track Progress 📍
+            </Button>
+          </div>
         </div>
         <p className="text-gray-700 dark:text-gray-300">{report.description}</p>
         <p className="text-sm text-gray-500">
@@ -437,10 +476,12 @@ const generateQRCode = async () => {
               <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">AI Status:</span>
               {report.isAIVerified === true ? (
                 <Badge className="bg-green-600 text-white border-0 px-3 py-1">Auto-Verified</Badge>
+              ) : report.citizenAdminVerification?.verified === true ? (
+                <Badge className="bg-blue-600 text-white border-0 px-3 py-1">Verified by Admin</Badge>
               ) : report.status === "Pending AI Review" ? (
                 <Badge className="bg-orange-500 text-white border-0 px-3 py-1">Manual Review Required</Badge>
               ) : (
-                <Badge variant="outline" className="text-gray-400">Processing...</Badge>
+                <Badge variant="outline" className="text-gray-500 font-medium">Analysis Completed</Badge>
               )}
             </div>
 
@@ -679,7 +720,7 @@ const generateQRCode = async () => {
 
             <div className="flex flex-wrap gap-2 mt-3">
               {availableStatuses
-                .filter((st) => st !== report.status && st !== "Open") // only hide current + Open
+                .filter((st) => ["Resolved", "Rejected"].includes(st)) // Officers can only manually close as Resolved or Rejected
                 .map((st) => (
                   <Button
                     key={st}

@@ -87,9 +87,8 @@ router.get("/check-sla", auth("admin"), async (req, res) => {
         const admins = await User.find({ role: "admin" });
         const adminNotifs = admins.map((a) => ({
           user: a._id,
-          message: `🚨 Report "${r.title}" (Dept: ${
-            r.department
-          }) breached SLA. Officer: ${r.assignedTo?.name || "Unassigned"}.`,
+          message: `🚨 Report "${r.title}" (Dept: ${r.department
+            }) breached SLA. Officer: ${r.assignedTo?.name || "Unassigned"}.`,
         }));
         await Notification.insertMany(adminNotifs);
 
@@ -139,56 +138,56 @@ router.post("/", auth("citizen"), async (req, res) => {
       imageEmbedding,
     } = req.body;
 
-  if (!title || !description)
-    return res.status(400).json({ message: "Missing required fields" });
+    if (!title || !description)
+      return res.status(400).json({ message: "Missing required fields" });
 
-  let coordinates = location?.coordinates;
+    let coordinates = location?.coordinates;
 
-  // ------------------------------------------------------------
-  // 🧠 Module 1: Multimodal Duplicate Detection (Text + Image)
-  // ------------------------------------------------------------
-  function cosineSimilarity(vecA, vecB) {
-    if (!vecA || !vecB || vecA.length !== vecB.length || vecA.length === 0)
-      return 0;
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
-    for (let i = 0; i < vecA.length; i++) {
+    // ------------------------------------------------------------
+    // 🧠 Module 1: Multimodal Duplicate Detection (Text + Image)
+    // ------------------------------------------------------------
+    function cosineSimilarity(vecA, vecB) {
+      if (!vecA || !vecB || vecA.length !== vecB.length || vecA.length === 0)
+        return 0;
+      let dotProduct = 0;
+      let normA = 0;
+      let normB = 0;
+      for (let i = 0; i < vecA.length; i++) {
         dotProduct += vecA[i] * vecB[i];
         normA += vecA[i] * vecA[i];
         normB += vecB[i] * vecB[i];
+      }
+      return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
     }
-    return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-  }
 
-  if (coordinates && coordinates.length === 2 && (textEmbedding || imageEmbedding)) {
-    // 1. Find neighbors in 100m radius
-    const neighbors = await Report.find({
-      location: {
-        $nearSphere: {
-          $geometry: { type: "Point", coordinates: coordinates.map(Number) },
-          $maxDistance: 100, // 100 meters
+    if (coordinates && coordinates.length === 2 && (textEmbedding || imageEmbedding)) {
+      // 1. Find neighbors in 100m radius
+      const neighbors = await Report.find({
+        location: {
+          $nearSphere: {
+            $geometry: { type: "Point", coordinates: coordinates.map(Number) },
+            $maxDistance: 100, // 100 meters
+          },
         },
-      },
-      status: { $in: ["Open", "Acknowledged", "In Progress", "Pending AI Review"] },
-    });
+        status: { $in: ["Open", "Acknowledged", "In Progress", "Pending AI Review"] },
+      });
 
-    for (const n of neighbors) {
-      // Check 1: Text Semantic Similarity (> 0.85)
-      const textSim = cosineSimilarity(textEmbedding, n.textEmbedding);
-      
-      // Check 2: Visual Image Similarity (> 0.98)
-      const imageSim = cosineSimilarity(imageEmbedding, n.imageEmbedding);
+      for (const n of neighbors) {
+        // Check 1: Text Semantic Similarity (> 0.85)
+        const textSim = cosineSimilarity(textEmbedding, n.textEmbedding);
 
-      if (textSim > 0.85 || imageSim > 0.98) {
-        return res.status(409).json({ 
-          message: "⚠️ DUPLICATE FOUND: This issue was already reported nearby.", 
-          duplicateId: n._id,
-          matchType: imageSim > 0.98 ? "Visual Match" : "Semantic Match"
-        });
+        // Check 2: Visual Image Similarity (> 0.98)
+        const imageSim = cosineSimilarity(imageEmbedding, n.imageEmbedding);
+
+        if (textSim > 0.85 || imageSim > 0.98) {
+          return res.status(409).json({
+            message: "⚠️ DUPLICATE FOUND: This issue was already reported nearby.",
+            duplicateId: n._id,
+            matchType: imageSim > 0.98 ? "Visual Match" : "Semantic Match"
+          });
+        }
       }
     }
-  }
 
     // ------------------------------------------------------------
     // 🧠 Module 1: Zero-Touch Category Mapping & Fast Track
@@ -196,7 +195,7 @@ router.post("/", auth("citizen"), async (req, res) => {
     let finalCategory = imageCategory || textCategory || "other";
     let finalStatus = "Open";
     let autoVerify = null;
-    
+
     // Force type casting for accuracy
     const aiVerified = String(isAIVerified) === "true";
     const vScore = Number(visionSeverityScore) || 0;
@@ -208,12 +207,12 @@ router.post("/", auth("citizen"), async (req, res) => {
     if (aiVerified && imageCategory) {
       finalCategory = imageCategory;
       finalStatus = "Acknowledged";
-      
+
       // Force assign AI severity from Model Score if verified
       if (vScore > 0) {
         initialSeverity = Math.min(5, Math.max(1, Math.round(vScore)));
       } else {
-         initialSeverity = 3; // AI Verified but score missing fallback
+        initialSeverity = 3; // AI Verified but score missing fallback
       }
 
       autoVerify = {
@@ -322,9 +321,9 @@ router.post("/", auth("citizen"), async (req, res) => {
       }
     }
 
-    res.status(201).json({ 
-      message: aiVerified ? "AI mapped successfully" : "AI mismatch: Assigned to Admin Review", 
-      report 
+    res.status(201).json({
+      message: aiVerified ? "AI mapped successfully" : "AI mismatch: Assigned to Admin Review",
+      report
     });
   } catch (err) {
     console.error("Create report error:", err);
@@ -364,34 +363,42 @@ router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
     // Officer updates
     // ----------------------------
     if (user.role === "officer") {
+      let historyLogged = false;
       if (status === "In Progress") {
         report.status = "In Progress";
       } else if (status === "Resolved" || status === "Rejected") {
-        // 🧠 AI Automation Logic (Module 2: Zero-Touch Resolution) 🧠
         const isFraud = similarityScore > 0.98;
-        const isVerifiedSuccess = (officerValidationPass === true) && (similarityScore >= 0.7) && (similarityScore <= 0.98);
+        const isMismatch = similarityScore < 0.3;
+        
+        // Determine if AI fully agrees with the officer's claim
+        let isAutoFinalized = false;
+        let autoFinishStatus = "";
+        let aiNote = "";
+
+        if (status === "Resolved" && similarityScore >= 0.7 && officerValidationPass === true) {
+          isAutoFinalized = true;
+          autoFinishStatus = "Resolved";
+          aiNote = `AI AUTO-RESOLUTION: High confidence match (${(similarityScore * 100).toFixed(1)}%) + Resolution Audit Pass.`;
+        } else if (status === "Rejected" && similarityScore >= 0.7 && (officerValidationPass === false || officerValidationPass === undefined)) {
+          isAutoFinalized = true;
+          autoFinishStatus = "Rejected";
+          aiNote = `AI AUTO-REJECTION: High confidence match (${(similarityScore * 100).toFixed(1)}%) + Confirmed Non-Issue (Audit Fail/No-Issue).`;
+        }
 
         if (isFraud) {
-          // 🚨 AI WORK REJECTION: Resolution attempt blocked, but keep report active.
-          // report.status remains unchanged (usually 'In Progress' or 'Acknowledged')
-          report.pendingStatus = null;
+          // 🚨 AI FRAUD BLOCK: Resolution attempt blocked, but keep report active.
           report.adminVerification = {
             verified: false,
-            note: "AI WORK REJECTION: Duplicate photo detected (>98% similarity). Resolution attempt blocked. Report remains open.",
+            note: "AI FRAUD ALERT: Officer update attempt blocked due to duplicate photo detection.",
             verifiedAt: new Date(),
-            history: [{ 
-              action: "auto-rejected", 
-              note: "AI Fraud Detection: Officer resolution attempt blocked.", 
-              createdAt: new Date() 
-            }]
+            history: [{ action: "auto-rejected", note: "AI Fraud Detection: Officer update blocked.", createdAt: new Date() }]
           };
 
-          // Log in status history specifically to explain the AI block
           report.statusHistory.push({
             status: report.status, // Keep current status
             by: null,
-            actorRole: "admin", // System acting as admin authority
-            note: "⚠️ AI WORK REJECTION: Resolution attempt blocked by Siamese Network due to duplicate photo detection (Fraud). Resolution denied.",
+            actorRole: "admin",
+            note: "⚠️ AI FRAUD REJECTION: Update attempt blocked by Siamese Network due to duplicate photo detection. Action denied.",
             media: formattedMedia,
             at: new Date(),
             autoGenerated: true
@@ -402,22 +409,35 @@ router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
           if (admins.length > 0) {
             const notifications = admins.map((a) => ({
               user: a._id,
-              message: `🚨 FRAUD ALERT: Officer attempted to resolve Report "${report.title}" using a duplicate photo. AI has blocked the resolution.`,
+              message: `🚨 FRAUD ALERT: Officer attempted to update Report "${report.title}" using a duplicate photo. AI has blocked the action.`,
             }));
             await Notification.insertMany(notifications);
           }
-        } else if (isVerifiedSuccess) {
-          // ✅ AUTO-RESOLVE: Highly certain location match + YOLO audit pass
-          report.status = "Resolved";
+          historyLogged = true;
+        } else if (isMismatch) {
+          // 📍 AI MISMATCH REJECTION: Officer is at wrong location. Block the update.
+          report.statusHistory.push({
+            status: report.status, // Keep current status
+            by: null,
+            actorRole: "admin",
+            note: `⚠️ AI MISMATCH REJECTION: Location similarity is too low (${(similarityScore * 100).toFixed(1)}%). Update rejected. Please visit the correct site.`,
+            media: formattedMedia,
+            at: new Date(),
+            autoGenerated: true
+          });
+          historyLogged = true;
+        } else if (isAutoFinalized) {
+          // ✅ ZERO-TOUCH: Highly certain location match + AI/Officer agreement
+          report.status = autoFinishStatus;
           report.pendingStatus = null;
           report.adminVerification = {
             verified: true,
-            note: `AI AUTO-RESOLUTION: High confidence match (${(similarityScore * 100).toFixed(1)}%) + Resolution Audit Pass.`,
+            note: aiNote,
             verifiedAt: new Date(),
-            history: [{ action: "auto-approved", note: "AI Work Validation", createdAt: new Date() }]
+            history: [{ action: "auto-approved", note: "AI Zero-Touch Validation", createdAt: new Date() }]
           };
         } else {
-          // 📋 MANUAL REVIEW: Uncertain location or YOLO flagged an issue
+          // 📋 MANUAL REVIEW: Uncertain location or AI-Officer disagreement
           report.pendingStatus = status;
           if (!report.adminVerification) {
             report.adminVerification = {
@@ -511,9 +531,8 @@ router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
       // Notify citizen
       await new Notification({
         user: report.reporter._id,
-        message: `✅ Your report "${
-          report.title
-        }" has been ${report.status.toLowerCase()} by admin.`,
+        message: `✅ Your report "${report.title
+          }" has been ${report.status.toLowerCase()} by admin.`,
       }).save();
     }
 

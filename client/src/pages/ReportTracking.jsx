@@ -131,11 +131,11 @@ export default function ReportTracking({ darkMode }) {
   const progressPct =
     report.slaDays && report.slaStartDate
       ? Math.min(
-          ((report.slaDays * 24 * 60 * 60 * 1000 - remainingTime) /
-            (report.slaDays * 24 * 60 * 60 * 1000)) *
-            100,
-          100
-        )
+        ((report.slaDays * 24 * 60 * 60 * 1000 - remainingTime) /
+          (report.slaDays * 24 * 60 * 60 * 1000)) *
+        100,
+        100
+      )
       : 0;
 
   const timeline = [
@@ -238,13 +238,12 @@ export default function ReportTracking({ darkMode }) {
             {/* Progress bar */}
             <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 mt-3">
               <div
-                className={`h-3 rounded-full transition-all duration-500 ${
-                  isOverdue
+                className={`h-3 rounded-full transition-all duration-500 ${isOverdue
                     ? "bg-red-500"
                     : stop
-                    ? "bg-green-500"
-                    : "bg-blue-500"
-                }`}
+                      ? "bg-green-500"
+                      : "bg-blue-500"
+                  }`}
                 style={{ width: `${progressPct}%` }}
               ></div>
             </div>
@@ -298,8 +297,8 @@ export default function ReportTracking({ darkMode }) {
                 ? entry.iconType === "approved"
                   ? "bg-green-500"
                   : entry.iconType === "rejected"
-                  ? "bg-red-500"
-                  : "bg-purple-500"
+                    ? "bg-red-500"
+                    : "bg-purple-500"
                 : roleColors[entry.actorRole] || roleColors.system;
 
             return (
