@@ -39,10 +39,9 @@ export default function HeatmapLayer({
       maxZoom: options.maxZoom || 17,
       minOpacity: options.minOpacity || 0.3,
       gradient: options.gradient || {
-        0.1: "green",
-        0.3: "yellow",
-        0.6: "orange",
-        1.0: "red",
+        0.2: "green",       // Severity 1-2 (Low)
+        0.6: "orange",      // Severity 3-4 (Medium)
+        1.0: "red",         // Severity 5 (High)
       },
       ...options,
     }).addTo(map);

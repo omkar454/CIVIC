@@ -67,9 +67,10 @@ router.post("/:id/vote", auth("citizen"), async (req, res) => {
 });
 
 /* ------------------------------------------------------------
-   📝 Add a comment (citizen only, requires admin verification)
+   📝 Coordination Chat: Add a message
+   (Restricted to Reporter & Departmental Officer)
 ------------------------------------------------------------ */
-router.post("/:id/comment", auth("citizen"), async (req, res) => {
+router.post("/:id/comment", auth(["citizen", "officer"]), async (req, res) => {
   try {
     const { message } = req.body;
     if (!message)
@@ -85,33 +86,56 @@ router.post("/:id/comment", auth("citizen"), async (req, res) => {
 
     const { report } = found;
 
-    if (!report.citizenAdminVerification?.verified) {
+    // 1. Status Check: Chat only allowed in Acknowledged or In Progress
+    const activeStatuses = ["Acknowledged", "In Progress"];
+    if (!activeStatuses.includes(report.status)) {
       return res.status(403).json({
         success: false,
-        message: "You can comment only after your report is verified by admin.",
+        message: `Coordination chat is only available for active reports (${activeStatuses.join(", ")}).`,
       });
     }
 
-    report.comments = report.comments || [];
-    report.comments.push({ message, by: req.user.id, createdAt: new Date() });
-    await report.save();
+    // 2. Participant Check:
+    const isReporter = req.user.role === "citizen" && report.reporter.toString() === req.user.id;
+    const isDeptOfficer = req.user.role === "officer" && report.department === req.user.department;
 
-    // Notify officers in report's department
-    const officers = await User.find({
-      role: "officer",
-      department: report.department,
-    });
-    if (officers.length) {
-      const notifications = officers.map((o) => ({
-        user: o._id,
-        message: `🗨️ New comment on report "${report.title}"`,
-      }));
-      await Notification.insertMany(notifications);
+    if (!isReporter && !isDeptOfficer) {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized: You are not a participant in this coordination chat.",
+      });
     }
 
-    res.json({ success: true, message: "Comment added", report });
+    // Push as a flat message (ignoring legacy reply field for new coordination structure)
+    report.comments = report.comments || [];
+    report.comments.push({ 
+      message, 
+      by: req.user.id, 
+      createdAt: new Date() 
+    });
+    
+    await report.save();
+
+    // Notify other participant
+    if (isReporter) {
+      // Notify departmental officers
+      const officers = await User.find({ role: "officer", department: report.department });
+      const notifications = officers.map((o) => ({
+        user: o._id,
+        message: `🗨️ Citizen updated the coordination chat for "${report.title}"`,
+      }));
+      if (notifications.length) await Notification.insertMany(notifications);
+    } else {
+      // Notify reporter
+      await Notification.create({
+        user: report.reporter,
+        message: `💬 Officer messaged you in the coordination chat for "${report.title}"`,
+      });
+    }
+
+    res.json({ success: true, message: "Message sent", report });
   } catch (err) {
-    console.error("Comment error:", err);
+    console.error("Coordination Chat error:", err);
     res.status(500).json({ success: false, message: "Server error" });
   }
 });
@@ -119,54 +143,5 @@ router.post("/:id/comment", auth("citizen"), async (req, res) => {
 /* ------------------------------------------------------------
    💬 Officer reply to a comment
 ------------------------------------------------------------ */
-router.post("/:id/reply/:commentId", auth("officer"), async (req, res) => {
-  try {
-    const { reply } = req.body;
-    if (!reply)
-      return res
-        .status(400)
-        .json({ success: false, message: "Reply required" });
-
-    const found = await findReportById(req.params.id);
-    if (!found)
-      return res
-        .status(404)
-        .json({ success: false, message: "Report not found" });
-
-    const { report } = found;
-
-    if (req.user.department !== report.department)
-      return res
-        .status(403)
-        .json({
-          success: false,
-          message: "Unauthorized to reply to this report",
-        });
-
-    report.comments = report.comments || [];
-    const comment = report.comments.id(req.params.commentId);
-    if (!comment)
-      return res
-        .status(404)
-        .json({ success: false, message: "Comment not found" });
-
-    comment.reply = reply;
-    comment.repliedBy = req.user.id;
-    comment.updatedAt = new Date();
-
-    await report.save();
-
-    // Notify original commenter
-    await Notification.create({
-      user: comment.by,
-      message: `💬 Officer replied to your comment on report "${report.title}"`,
-    });
-
-    res.json({ success: true, message: "Reply added", report });
-  } catch (err) {
-    console.error("Reply error:", err);
-    res.status(500).json({ success: false, message: "Server error" });
-  }
-});
 
 export default router;

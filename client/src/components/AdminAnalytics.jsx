@@ -1,6 +1,6 @@
 // src/components/AdminAnalytics.jsx
 import { useEffect, useState } from "react";
-import axios from "axios";
+import API from "../services/api";
 import {
   BarChart,
   Bar,
@@ -19,17 +19,16 @@ export default function AdminAnalytics() {
   const [summary, setSummary] = useState([]);
   const [slaTrend, setSlaTrend] = useState([]);
   const [selectedDept, setSelectedDept] = useState("All"); // dropdown filter
+  const [loading, setLoading] = useState(true);
 
   const token = localStorage.getItem("accessToken");
 
   useEffect(() => {
-    if (!token) return;
+    setLoading(true);
+    const now = new Date();
 
     // 1️⃣ Department Trends (Last 6 Months)
-    axios
-      .get("http://localhost:5000/api/admin/department-trends?months=6", {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+    const fetchTrends = API.get("/admin/department-trends?months=6")
       .then((res) => {
         const raw = res.data.trends || [];
         const allDepts = new Set();
@@ -53,40 +52,34 @@ export default function AdminAnalytics() {
       .catch((err) => console.error("Department trends error:", err));
 
     // 2️⃣ Department Insights
-    axios
-      .get("http://localhost:5000/api/admin/department-insights", {
-        headers: { Authorization: `Bearer ${token}` },
-      })
+    const fetchInsights = API.get("/admin/department-insights")
       .then((res) => {
-        const data = res.data.departments || [];
-        setDepartments(
-          data.sort((a, b) => a.department.localeCompare(b.department))
-        );
-      })
-      .catch((err) => console.error("Department insights error:", err));
+        const data = (res.data.departments || []).map(d => ({
+          ...d,
+          department: (d.department.charAt(0).toUpperCase() + d.department.slice(1))
+        }));
+        setDepartments(data.sort((a, b) => a.department.localeCompare(b.department)));
+      });
 
-    // 3️⃣ Monthly Performance Summary
-    const now = new Date();
-    axios
-      .get(
-        `http://localhost:5000/api/admin/performance-summary?period=month&year=${now.getFullYear()}&month=${
-          now.getMonth() - 1
-        }`,
-        { headers: { Authorization: `Bearer ${token}` } }
+    // 3️⃣ Monthly Performance Summary (Accurate 1-indexed month)
+    const fetchSummary = API.get(
+        `/admin/performance-summary?period=month&year=${now.getFullYear()}&month=${now.getMonth() + 1}`
       )
-      .then((res) => setSummary(res.data.summary || []))
-      .catch((err) => console.error("Performance summary error:", err));
+      .then((res) => {
+        const data = (res.data.summary || []).map(s => ({
+          ...s,
+          department: (s.department.charAt(0).toUpperCase() + s.department.slice(1))
+        }));
+        setSummary(data);
+      });
 
     // 4️⃣ SLA Overdue Trend (Monthly)
-    axios
-      .get(
-        "http://localhost:5000/api/admin/sla-overdue-trend?period=month&months=6",
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      )
-      .then((res) => setSlaTrend(res.data || []))
-      .catch((err) => console.error("SLA overdue trend error:", err));
+    const fetchSla = API.get("/admin/sla-overdue-trend?period=month&months=6")
+      .then((res) => setSlaTrend(res.data || []));
+
+    Promise.all([fetchTrends, fetchInsights, fetchSummary, fetchSla])
+      .catch((err) => console.error("Admin analytics fetch error:", err))
+      .finally(() => setLoading(false));
   }, [token]);
 
   const colorPalette = [
@@ -118,6 +111,15 @@ export default function AdminAnalytics() {
     return monthData;
   });
 
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center p-20 space-y-4">
+        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-gray-600 dark:text-gray-400 font-medium animate-pulse">Analyzing city metrics...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="mt-10 space-y-6">
       <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-gray-200">
@@ -136,7 +138,7 @@ export default function AdminAnalytics() {
               <YAxis />
               <Tooltip />
               <Legend />
-              {Object.keys(trends[0])
+              {trends[0] && Object.keys(trends[0])
                 .filter((key) => key !== "month")
                 .map((dept, idx) => (
                   <Line

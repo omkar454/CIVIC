@@ -79,7 +79,7 @@ export default function HeatmapPage() {
         {/* Heatmap */}
         <HeatmapLayer
           points={reports
-            .filter((r) => r.lat && r.lng && selectedStatuses.includes(r.status))
+            .filter((r) => r.lat && r.lng && selectedStatuses.includes(r.status) && ["Acknowledged", "In Progress"].includes(r.status))
             .map((r) => [r.lat, r.lng, r.severity / 5])}
           options={{ radius: 25, blur: 15, maxZoom: 17 }}
           showLegend={true}

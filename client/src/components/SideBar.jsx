@@ -61,7 +61,7 @@ export default function Sidebar({ role }) {
               to="/reports"
               className="hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
             >
-              Reports Overview
+              All Reports
             </Link>
             {/* <Link
               to="/users"

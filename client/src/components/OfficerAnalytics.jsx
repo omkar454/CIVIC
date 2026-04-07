@@ -1,6 +1,6 @@
 // src/components/OfficerAnalytics.jsx
 import { useEffect, useState } from "react";
-import axios from "axios";
+import API from "../services/api";
 import {
   LineChart,
   Line,
@@ -17,39 +17,41 @@ export default function OfficerAnalytics() {
   const [trends, setTrends] = useState([]);
   const [insights, setInsights] = useState(null);
   const [summary, setSummary] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   const token = localStorage.getItem("accessToken");
 
   useEffect(() => {
-    if (!token) return;
+    setLoading(true);
+    const now = new Date();
 
     // 1️⃣ Department Trends
-    axios
-      .get("http://localhost:5000/api/officer/department-trends?months=6", {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      .then((res) => setTrends(res.data.trends || []))
-      .catch((err) => console.error("Officer trends error:", err));
+    const fetchTrends = API.get("/officer/department-trends?months=6")
+      .then((res) => setTrends(res.data.trends || []));
 
     // 2️⃣ Department Insights
-    axios
-      .get("http://localhost:5000/api/officer/department-insights", {
-        headers: { Authorization: `Bearer ${token}` },
-      })
-      .then((res) => setInsights(res.data.insights))
-      .catch((err) => console.error("Officer insights error:", err));
+    const fetchInsights = API.get("/officer/department-insights")
+      .then((res) => setInsights(res.data.insights));
 
-    // 3️⃣ Performance Summary
-    axios
-      .get(
-        `http://localhost:5000/api/officer/performance-summary?period=month&year=${new Date().getFullYear()}&month=${
-          new Date().getMonth() + 1
-        }`,
-        { headers: { Authorization: `Bearer ${token}` } }
+    // 3️⃣ Performance Summary (Accurate 1-indexed month)
+    const fetchSummary = API.get(
+        `/officer/performance-summary?period=month&year=${now.getFullYear()}&month=${now.getMonth() + 1}`
       )
-      .then((res) => setSummary(res.data.summary || []))
-      .catch((err) => console.error("Officer summary error:", err));
+      .then((res) => setSummary(res.data.summary || []));
+
+    Promise.all([fetchTrends, fetchInsights, fetchSummary])
+      .catch((err) => console.error("Officer analytics error:", err))
+      .finally(() => setLoading(false));
   }, [token]);
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center p-20 space-y-4">
+        <div className="w-12 h-12 border-4 border-orange-500 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-gray-600 dark:text-gray-400 font-medium animate-pulse">Loading department insights...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="mt-10 space-y-6">
@@ -59,7 +61,7 @@ export default function OfficerAnalytics() {
 
       {/* 1️⃣ Complaint Trends (Line Chart) */}
       {trends.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 p-4 rounded shadow">
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-gray-100 dark:border-gray-700">
           <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
             Complaint Trends (Last 6 Months)
           </h3>
@@ -100,9 +102,10 @@ export default function OfficerAnalytics() {
 
       {/* 2️⃣ Department Insights */}
       {insights && (
-        <div className="bg-white dark:bg-gray-800 p-4 rounded shadow">
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-gray-100 dark:border-gray-700">
           <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
-            Department Insights
+            {insights.department ? (insights.department.charAt(0).toUpperCase() + insights.department.slice(1)) : "Department"}
+            {" "}Insights
           </h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center text-gray-700 dark:text-gray-200">
             <div>
@@ -133,7 +136,7 @@ export default function OfficerAnalytics() {
 
       {/* 3️⃣ Monthly Summary */}
       {summary.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 p-4 rounded shadow">
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-gray-100 dark:border-gray-700">
           <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
             Monthly Performance Summary
           </h3>

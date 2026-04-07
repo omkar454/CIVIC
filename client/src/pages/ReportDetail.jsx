@@ -252,30 +252,16 @@ const generateQRCode = async () => {
     }
   };
 
-  // ------------------ Add Comment ------------------
+  // ------------------ Coordination Chat ------------------
   const addComment = async () => {
-    if (!commentText) return;
+    if (!commentText.trim()) return;
     try {
       await API.post(`/votesComments/${id}/comment`, { message: commentText });
       setCommentText("");
       fetchReport();
     } catch (err) {
       console.error("Add comment error:", err);
-      alert(err.response?.data?.message || "Failed to add comment");
-    }
-  };
-
-  // ------------------ Reply ------------------
-  const replyToComment = async (commentId, replyText) => {
-    if (!replyText) return;
-    try {
-      await API.post(`/votesComments/${id}/reply/${commentId}`, {
-        reply: replyText,
-      });
-      fetchReport();
-    } catch (err) {
-      console.error("Reply error:", err);
-      alert(err.response?.data?.message || "Failed to reply");
+      alert(err.response?.data?.message || "Failed to send message");
     }
   };
 
@@ -400,13 +386,13 @@ const generateQRCode = async () => {
     Rejected: "bg-gray-200 text-gray-700",
   };
 
-  const canVote = role === "citizen" && report.reporter?._id !== userId;
-  const canComment = role === "citizen";
-  const normalize = (str) => str?.trim().toLowerCase();
-  const canReply =
-    role === "officer" && normalize(report.department) === normalize(userDept);
-  const canUpdateStatus =
-    role === "officer" && normalize(report.department) === normalize(userDept);
+  const isReporter = report.reporter?._id === userId;
+  const isDeptOfficer = role === "officer" && normalize(report.department) === normalize(userDept);
+  const isParticipant = isReporter || isDeptOfficer;
+  const isActiveStatus = ["Acknowledged", "In Progress"].includes(report.status);
+  const canChat = isParticipant && isActiveStatus;
+  const canVote = role === "citizen" && !isReporter && ["Acknowledged", "In Progress"].includes(report.status);
+  const canUpdateStatus = isDeptOfficer;
 
   return (
     <div className="max-w-5xl mx-auto p-4 space-y-6">
@@ -897,118 +883,94 @@ const generateQRCode = async () => {
         </div>
       )}
 
-      {/* ---------------- Comments / Status Message ---------------- */}
-      <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3">
-        <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
-          {report.status === "Resolved"
-            ? "Report Status"
-            : report.status === "Rejected"
-            ? "Report Status"
-            : "Comments"}
-        </h2>
-
-        {report.status === "Open" ? (
-          <p className="text-gray-500 italic">
-            This report is currently awaiting admin approval. Comments will be
-            available once verified.
-          </p>
-        ) : report.status === "Resolved" ? (
-          <p className="text-green-700 dark:text-green-400 font-semibold">
-            This report has been successfully resolved and completed.
-          </p>
-        ) : report.status === "Rejected" ? (
-          <p className="text-red-700 dark:text-red-400 font-semibold">
-            Admin has rejected this report. It is no longer under consideration.
-          </p>
-        ) : report.transfer?.requested &&
-          report.transfer.status === "pending" ? (
-          <p className="text-gray-500 italic">
-            This report has been transferred to another department. Comments are
-            temporarily hidden until admin approves the transfer.
-          </p>
-        ) : report.comments?.length > 0 ? (
-          // Normal comments
-          <div className="space-y-2">
-            {report.comments.map((c) => {
-              const isAdminComment = c.by?.role === "admin";
-              const officerCannotReply = role === "officer" && isAdminComment;
-
-              return (
-                <div
-                  key={c._id}
-                  className={`p-3 rounded shadow-sm ${
-                    isAdminComment
-                      ? "bg-yellow-50 dark:bg-yellow-900"
-                      : "bg-gray-100 dark:bg-gray-700"
-                  }`}
-                >
-                  <p className="text-gray-700 dark:text-gray-300">
-                    {c.message}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    {c.by?.name || "Citizen"} |{" "}
-                    {new Date(c.createdAt).toLocaleString()}
-                  </p>
-
-                  {c.reply && (
-                    <p className="mt-1 pl-4 border-l-2 border-gray-300 text-gray-600 dark:text-gray-400">
-                      Reply by {c.repliedBy?.name}: {c.reply}
-                    </p>
-                  )}
-
-                  {!officerCannotReply && canReply && !c.reply && (
-                    <div className="mt-1 flex gap-2">
-                      <input
-                        type="text"
-                        placeholder="Write a reply..."
-                        className="flex-1 border p-1 rounded"
-                        onChange={(e) => (c.replyTemp = e.target.value)}
-                      />
-                      <Button
-                        onClick={() => replyToComment(c._id, c.replyTemp)}
-                        className="bg-purple-600 hover:bg-purple-700 text-white"
-                      >
-                        Reply
-                      </Button>
-                    </div>
-                  )}
-
-                  {officerCannotReply && role === "officer" && (
-                    <p className="text-sm text-gray-500 dark:text-gray-400 italic mt-1">
-                      Officers cannot reply to admin comments.
-                    </p>
-                  )}
-                </div>
-              );
-            })}
+      {/* ---------------- Coordination Chat ---------------- */}
+      <div className="bg-white dark:bg-gray-800 shadow-xl rounded-2xl overflow-hidden border border-gray-100 dark:border-gray-700">
+        <div className="bg-gray-50 dark:bg-gray-900/50 p-4 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">💬</span>
+            <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">Coordination Chat</h2>
           </div>
-        ) : (
-          <p className="text-gray-500">No comments yet.</p>
-        )}
+          {isActiveStatus ? (
+            <Badge className="bg-blue-100 text-blue-700 border-blue-200 animate-pulse">Live Session</Badge>
+          ) : (
+            <Badge variant="outline" className="text-gray-400">Archived Record</Badge>
+          )}
+        </div>
 
-        {/* Add comment input for citizens */}
-        {canComment &&
-          (!report.transfer?.requested ||
-            report.transfer.status === "approved") &&
-          report.status !== "Open" &&
-          report.status !== "Resolved" &&
-          report.status !== "Rejected" && (
-            <div className="mt-3 flex gap-2">
+        <div className="p-4 space-y-4 max-h-[500px] overflow-y-auto">
+          {report.status === "Open" ? (
+            <div className="text-center py-10">
+              <p className="text-gray-500 italic">
+                This report is currently <strong>awaiting admin approval</strong>. 
+                <br/>The coordination channel will open once the report is Acknowledged.
+              </p>
+            </div>
+          ) : report.comments?.length > 0 ? (
+            <div className="flex flex-col gap-3">
+              {report.comments.map((c) => {
+                const isMsgFromOfficer = c.by?.role === "officer";
+                const isMsgFromMe = c.by?._id === userId;
+                
+                return (
+                  <div
+                    key={c._id}
+                    className={`flex flex-col max-w-[85%] ${isMsgFromMe ? "self-end items-end" : "self-start items-start"}`}
+                  >
+                    <div className={`px-4 py-2.5 rounded-2xl shadow-sm border ${
+                      isMsgFromOfficer 
+                        ? "bg-blue-600 text-white border-blue-500 rounded-tr-none" 
+                        : "bg-indigo-50 dark:bg-gray-700 text-indigo-900 dark:text-gray-100 border-indigo-100 dark:border-gray-600 rounded-tl-none"
+                    }`}>
+                      <p className="text-sm font-medium leading-relaxed">{c.message}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 mt-1 px-1">
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${isMsgFromOfficer ? "text-blue-500" : "text-indigo-500"}`}>
+                        {isMsgFromOfficer ? "Officer" : "Citizen"}
+                      </span>
+                      <span className="text-[10px] text-gray-400">•</span>
+                      <span className="text-[10px] text-gray-400">{new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="text-center py-12 bg-gray-50 dark:bg-gray-900/30 rounded-xl border border-dashed border-gray-200 dark:border-gray-700">
+              <p className="text-gray-400 text-sm">No messages yet. Start the coordination below!</p>
+            </div>
+          )}
+        </div>
+
+        {/* Action Area */}
+        <div className="p-4 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-100 dark:border-gray-700">
+          {canChat ? (
+            <div className="flex gap-2 bg-white dark:bg-gray-800 p-1.5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-inner">
               <input
                 type="text"
-                placeholder="Write a comment..."
+                placeholder="Type your message to coordinate..."
                 value={commentText}
                 onChange={(e) => setCommentText(e.target.value)}
-                className="flex-1 border p-2 rounded focus:outline-none focus:ring focus:ring-blue-400 dark:bg-gray-800 dark:text-white"
+                onKeyPress={(e) => e.key === 'Enter' && addComment()}
+                className="flex-1 bg-transparent px-3 py-2 text-sm focus:outline-none dark:text-white"
               />
               <Button
                 onClick={addComment}
-                className="bg-green-600 hover:bg-green-700 text-white"
+                className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-6 font-bold"
               >
-                Add Comment
+                Send 🚀
               </Button>
             </div>
+          ) : (
+            <div className="flex items-center justify-center gap-2 py-2 px-4 bg-gray-100 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+              <span className="text-lg">🔒</span>
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 text-center">
+                {!isActiveStatus 
+                  ? `Chat is read-only because the report is ${report.status}.` 
+                  : "You are viewing this coordination chat as a spectator."}
+              </p>
+            </div>
           )}
+        </div>
       </div>
     </div>
   );

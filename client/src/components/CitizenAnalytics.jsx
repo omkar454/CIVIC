@@ -13,13 +13,17 @@ import {
   Cell,
   BarChart,
   Bar,
-  CartesianGrid,
   ResponsiveContainer,
 } from "recharts";
-import { Card, CardContent } from "./ui/card";
-import { Button } from "./ui/button";
 
-const COLORS = ["#4CAF50", "#2196F3", "#FF9800", "#F44336", "#9C27B0"];
+const COLORS = ["#3B82F6", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6"];
+const STATUS_COLORS = {
+  Open: "#EF4444",
+  Acknowledged: "#F59E0B",
+  "In Progress": "#3B82F6",
+  Resolved: "#10B981",
+  Rejected: "#6B7280",
+};
 
 export default function CitizenAnalytics() {
   const [trendData, setTrendData] = useState([]);
@@ -61,19 +65,26 @@ export default function CitizenAnalytics() {
   };
 
   if (loading) {
-    return <p className="text-center text-gray-500">Loading analytics...</p>;
+    return (
+      <div className="flex flex-col items-center justify-center p-20 space-y-4">
+        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-gray-600 dark:text-gray-400 font-medium animate-pulse">Analyzing your impact...</p>
+      </div>
+    );
   }
 
   return (
-    <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-6">
-      {/* Complaint Trends */}
-      <Card className="shadow-md border border-gray-200 rounded-xl">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-gray-800">
-              📈 Complaint Trends
-            </h2>
-          </div>
+    <div className="mt-10 space-y-6">
+      <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-gray-200">
+        📊 Your Personal Activity Insights
+      </h2>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Complaint Trends */}
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-gray-100 dark:border-gray-700">
+          <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
+            📈 My Reporting History
+          </h3>
           {trendData.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={trendData}>
@@ -84,28 +95,25 @@ export default function CitizenAnalytics() {
                 <Line
                   type="monotone"
                   dataKey="count"
-                  stroke="#2196F3"
+                  stroke="#3B82F6"
                   strokeWidth={3}
                   dot={{ r: 5 }}
+                  name="Reports Submitted"
                 />
               </LineChart>
             </ResponsiveContainer>
           ) : (
-            <p className="text-gray-500 text-center mt-10">
-              No reports found.
+            <p className="text-gray-500 text-center py-20 italic">
+              No submission history yet.
             </p>
           )}
-        </CardContent>
-      </Card>
+        </div>
 
-      {/* Status Breakdown */}
-      <Card className="shadow-md border border-gray-200 rounded-xl">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-gray-800">
-              🥧 Status Breakdown
-            </h2>
-          </div>
+        {/* Status Breakdown */}
+        <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-gray-100 dark:border-gray-700">
+          <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
+            🥧 Outcome Breakdown
+          </h3>
           {statusBreakdown.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
@@ -115,72 +123,78 @@ export default function CitizenAnalytics() {
                   nameKey="status"
                   cx="50%"
                   cy="50%"
-                  outerRadius={100}
-                  label
+                  outerRadius={90}
+                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                 >
-                  {statusBreakdown.map((_, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                  {statusBreakdown.map((entry, i) => (
+                    <Cell key={i} fill={STATUS_COLORS[entry.status] || COLORS[i % COLORS.length]} />
                   ))}
                 </Pie>
                 <Tooltip />
               </PieChart>
             </ResponsiveContainer>
           ) : (
-            <p className="text-gray-500 text-center mt-10">
+            <p className="text-gray-500 text-center py-20 italic">
               No status data available.
             </p>
           )}
-          <p className="mt-4 text-center text-sm text-gray-600">
-            ⏱️ Avg. Resolution Time:{" "}
-            <strong>{avgResolutionTime} days</strong>
-          </p>
-        </CardContent>
-      </Card>
+          <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/30 rounded-lg text-center">
+            <p className="text-sm text-gray-700 dark:text-gray-200">
+              ⏱️ Average Resolution Time: 
+              <span className="ml-2 font-bold text-blue-600 dark:text-blue-400">{avgResolutionTime} days</span>
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* Monthly/Quarterly Performance Summary */}
-      <Card className="shadow-md border border-gray-200 rounded-xl md:col-span-2">
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-lg font-semibold text-gray-800">
-              📊 Performance Summary
-            </h2>
-            <div>
-              <Button
-                size="sm"
-                variant={period === "monthly" ? "default" : "outline"}
-                onClick={() => setPeriod("monthly")}
-                className="mr-2"
-              >
-                Monthly
-              </Button>
-              <Button
-                size="sm"
-                variant={period === "quarterly" ? "default" : "outline"}
-                onClick={() => setPeriod("quarterly")}
-              >
-                Quarterly
-              </Button>
-            </div>
+      <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-gray-100 dark:border-gray-700">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between mb-4 gap-4">
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+            📊 Activity Performance Summary
+          </h3>
+          <div className="bg-gray-100 dark:bg-gray-700 p-1 rounded-lg flex">
+            <button
+              onClick={() => setPeriod("monthly")}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
+                period === "monthly"
+                  ? "bg-white dark:bg-gray-600 text-blue-600 shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Monthly
+            </button>
+            <button
+              onClick={() => setPeriod("quarterly")}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${
+                period === "quarterly"
+                  ? "bg-white dark:bg-gray-600 text-blue-600 shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              Quarterly
+            </button>
           </div>
+        </div>
 
-          {summary.length > 0 ? (
-            <ResponsiveContainer width="100%" height={320}>
-              <BarChart data={summary}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="label" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="total" fill="#2196F3" name="Total Reports" />
-                <Bar dataKey="resolved" fill="#4CAF50" name="Resolved" />
-                <Bar dataKey="rejected" fill="#F44336" name="Rejected" />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <p className="text-gray-500 text-center mt-10">No summary data.</p>
-          )}
-        </CardContent>
-      </Card>
+        {summary.length > 0 ? (
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={summary}>
+              <XAxis dataKey="label" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              <Bar dataKey="total" fill="#3B82F6" name="Total Submitted" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="resolved" fill="#10B981" name="Resolved" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="rejected" fill="#EF4444" name="Rejected" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="h-64 flex items-center justify-center text-gray-500 italic">
+            No summary data for this period.
+          </div>
+        )}
+      </div>
     </div>
   );
 }

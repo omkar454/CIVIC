@@ -143,75 +143,99 @@ router.get("/users", auth("admin"), async (req, res) => {
 // Export verified reports (JSON or CSV)
 // Only include reports with status != "Open"
 // -----------------------------
+// -----------------------------
+// Export reports for BMC Data Analysis (JSON or CSV)
+// Includes ALL statuses: Open, Acknowledged, In Progress, Resolved, Rejected, Closed
+// -----------------------------
 router.get("/export/reports", auth("admin"), async (req, res) => {
   try {
-    // Fetch both report types but exclude 'Open'
-    const reports = await Report.find({ status: { $ne: "Open" } })
-      .populate("reporter", "name email role")
-      .populate("assignedTo", "name email role");
+    // Fetch all reports from both collections without status filters
+    const [reports, textReports] = await Promise.all([
+      Report.find()
+        .populate("reporter", "name email role")
+        .populate("assignedTo", "name email role")
+        .lean(),
+      TextAddressReport.find()
+        .populate("reporter", "name email role")
+        .populate("assignedTo", "name email role")
+        .lean()
+    ]);
 
-    const textReports = await TextAddressReport.find({ status: { $ne: "Open" } })
-      .populate("reporter", "name email role")
-      .populate("assignedTo", "name email role");
+    // Merge and standardize
+    const allReports = [
+      ...reports.map(r => ({ ...r, isTextReport: false })),
+      ...textReports.map(r => ({ ...r, isTextReport: true }))
+    ];
 
-    const allReports = [...reports, ...textReports];
-
-    // If no reports found
     if (allReports.length === 0) {
-      return res.status(404).json({ message: "No verified reports found" });
+      return res.status(404).json({ message: "No reports found to export" });
     }
 
-    // ✅ CSV export
-    if (req.query.format === "csv") {
-      const csvHeader =
-        "id,title,category,department,status,reporter,assignedTo,createdAt,updatedAt\n";
+    // Map common fields accurately
+    const formattedReports = allReports.map((r) => {
+      // Handle Location (GeoJSON: [lng, lat])
+      let locStr = "N/A";
+      if (r.location && Array.isArray(r.location.coordinates) && r.location.coordinates.length === 2) {
+        locStr = `${r.location.coordinates[1]}, ${r.location.coordinates[0]}`;
+      }
 
-      const csvRows = allReports
-        .map((r) => {
-          const id = r._id || "";
-          const title = (r.title || "").replace(/,/g, " ");
-          const category = (r.category || "").replace(/,/g, " ");
-          const department = (r.department || "").replace(/,/g, " ");
-          const status = r.status || "";
-          const reporter = r.reporter?.email || "N/A";
-          const assignedTo = r.assignedTo?.email || "N/A";
-          const createdAt = r.createdAt
-            ? new Date(r.createdAt).toLocaleString()
-            : "";
-          const updatedAt = r.updatedAt
-            ? new Date(r.updatedAt).toLocaleString()
-            : "";
-          return `${id},${title},${category},${department},${status},${reporter},${assignedTo},${createdAt},${updatedAt}`;
-        })
-        .join("\n");
+      return {
+        id: r._id ? r._id.toString() : "N/A",
+        title: r.title || "N/A",
+        description: r.description || "No description",
+        category: r.category || "General",
+        department: r.department || "General",
+        status: r.status || "Open",
+        severity: r.severity || 0, // Using 0 if missing
+        slaStatus: r.slaStatus || "On Time",
+        isTextual: r.isTextReport,
+        address: r.address || "N/A",
+        location: locStr,
+        reporter: r.reporter?.name || "N/A",
+        reporterEmail: r.reporter?.email || "N/A",
+        assignedTo: r.assignedTo?.name || "Unassigned",
+        createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : "N/A",
+        updatedAt: r.updatedAt ? new Date(r.updatedAt).toISOString() : "N/A"
+      };
+    });
+
+    // ✅ CSV export logic
+    if (req.query.format === "csv") {
+      const headers = [
+        "id", "title", "category", "department", "status", "severity", 
+        "slaStatus", "isTextual", "address", "location", 
+        "reporter", "reporterEmail", "assignedTo", "createdAt", "updatedAt"
+      ];
+      
+      const csvHeader = headers.join(",") + "\n";
+      const csvRows = formattedReports.map((r) => {
+        return headers.map(h => {
+          let val = r[h] === undefined ? "" : r[h];
+          // Escape commas and quotes for CSV
+          if (typeof val === "string") {
+            val = `"${val.replace(/"/g, '""')}"`;
+          }
+          return val;
+        }).join(",");
+      }).join("\n");
 
       res.setHeader("Content-Type", "text/csv");
       res.setHeader(
         "Content-Disposition",
-        "attachment; filename=verified_reports.csv"
+        "attachment; filename=bmc_civic_reports_full.csv"
       );
       return res.send(csvHeader + csvRows);
     }
 
-    // ✅ JSON export
-    const reportsJson = allReports.map((r) => ({
-      id: r._id,
-      title: r.title,
-      category: r.category,
-      department: r.department,
-      status: r.status,
-      reporter: r.reporter?.name || "N/A",
-      reporterEmail: r.reporter?.email || "N/A",
-      assignedTo: r.assignedTo?.name || "N/A",
-      createdAt: r.createdAt,
-      updatedAt: r.updatedAt,
-      location: r.location || null,
-    }));
-
-    res.json({ count: reportsJson.length, reports: reportsJson });
+    // ✅ JSON export logic
+    res.json({ 
+      count: formattedReports.length, 
+      generatedAt: new Date().toISOString(),
+      reports: formattedReports 
+    });
   } catch (err) {
     console.error("Export reports error:", err);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Server error during export" });
   }
 });
 
@@ -220,9 +244,13 @@ router.get("/export/reports", auth("admin"), async (req, res) => {
 // -----------------------------
 router.get("/analytics", auth("admin"), async (req, res) => {
   try {
-    const reports = await Report.find();
-    const textReports = await TextAddressReport.find();
+    const limit = 2000;
+    const reports = await Report.find().sort({ createdAt: -1 }).limit(limit);
+    const textReports = await TextAddressReport.find().sort({ createdAt: -1 }).limit(limit);
     const allReports = [...reports, ...textReports];
+
+    // Statuses to ensure representativeness
+    const ALL_STATUSES = ["Open", "Acknowledged", "In Progress", "Resolved", "Rejected", "Closed"];
 
     // By category
     const byCategory = [];
@@ -234,26 +262,43 @@ router.get("/analytics", auth("admin"), async (req, res) => {
       byCategory.push({ category: key, count: categoryMap[key] });
     }
 
-    // By status
-    const byStatus = [];
+    // By status (Ensuring all statuses are present)
     const statusMap = {};
+    ALL_STATUSES.forEach(s => statusMap[s] = 0);
     allReports.forEach((r) => {
-      statusMap[r.status] = (statusMap[r.status] || 0) + 1;
+      if (statusMap[r.status] !== undefined) {
+        statusMap[r.status]++;
+      }
     });
-    for (const key in statusMap) {
-      byStatus.push({ status: key, count: statusMap[key] });
-    }
+    const byStatus = ALL_STATUSES.map(s => ({ status: s, count: statusMap[s] }));
 
-    // Resolution trend per day
+    // By Severity (Accuracy improvement)
+    const severityMap = {};
+    [1, 2, 3, 4, 5].forEach(s => severityMap[s] = 0);
+    allReports.forEach(r => {
+      const sev = parseInt(r.severity);
+      if (!isNaN(sev) && severityMap[sev] !== undefined) {
+        severityMap[sev]++;
+      }
+    });
+    const bySeverity = [1, 2, 3, 4, 5].map(s => ({ 
+      level: `Lvl ${s}`, 
+      severity: s, 
+      count: severityMap[s] 
+    }));
+
+    // Resolution trend per day (Sorted)
     const trendMap = {};
     allReports.forEach((r) => {
       const date = r.createdAt.toISOString().split("T")[0];
       if (!trendMap[date]) trendMap[date] = { date };
       trendMap[date][r.status] = (trendMap[date][r.status] || 0) + 1;
     });
-    const resolutionTrend = Object.values(trendMap);
+    const resolutionTrend = Object.values(trendMap).sort((a, b) => 
+      new Date(a.date) - new Date(b.date)
+    );
 
-    res.json({ byCategory, byStatus, resolutionTrend });
+    res.json({ byCategory, byStatus, bySeverity, resolutionTrend });
   } catch (err) {
     console.error("Analytics fetch error:", err);
     res.status(500).json({ message: "Failed to fetch analytics" });
@@ -312,6 +357,11 @@ router.get("/department-insights", auth("admin"), async (req, res) => {
         }
       }
 
+      // ✅ Track Open Reports for efficiency denominator correction
+      if (r.status === "Open") {
+        departmentMap[dept].open = (departmentMap[dept].open || 0) + 1;
+      }
+
       // ✅ Handle Rejected Reports
       if (r.status === "Rejected") {
         departmentMap[dept].rejected += 1;
@@ -321,8 +371,8 @@ router.get("/department-insights", auth("admin"), async (req, res) => {
     // Convert Map → Array
     const departments = Object.values(departmentMap).map((d) => ({
       ...d,
-      efficiencyPct: d.totalReports
-        ? ((d.resolved / d.totalReports) * 100).toFixed(2)
+      efficiencyPct: (d.totalReports - (d.open || 0)) > 0
+        ? ((d.resolved / (d.totalReports - (d.open || 0))) * 100).toFixed(2)
         : "0.00",
       avgResolutionDays: d.resolved
         ? (d.resolutionTimeSum / d.resolved).toFixed(2)
@@ -387,7 +437,7 @@ router.get("/performance-summary", async (req, res) => {
     const startOfMonth = new Date(selectedYear, selectedMonth - 1, 1);
     const endOfMonth = new Date(selectedYear, selectedMonth, 1);
 
-    const summary = await Report.aggregate([
+    const pipeline = [
       { $match: { createdAt: { $gte: startOfMonth, $lt: endOfMonth } } },
       {
         $group: {
@@ -411,7 +461,27 @@ router.get("/performance-summary", async (req, res) => {
         },
       },
       { $sort: { department: 1 } },
+    ];
+
+    const [geoSummary, textSummary] = await Promise.all([
+      Report.aggregate(pipeline),
+      TextAddressReport.aggregate(pipeline),
     ]);
+
+    const mergedMap = {};
+    [...geoSummary, ...textSummary].forEach((s) => {
+      const dept = (s.department || "general").toLowerCase();
+      if (!mergedMap[dept]) {
+        mergedMap[dept] = { department: dept, total: 0, resolved: 0, rejected: 0 };
+      }
+      mergedMap[dept].total += s.total;
+      mergedMap[dept].resolved += s.resolved;
+      mergedMap[dept].rejected += s.rejected;
+    });
+
+    const summary = Object.values(mergedMap).sort((a, b) => 
+      a.department.localeCompare(b.department)
+    );
 
     res.json({ summary });
   } catch (err) {

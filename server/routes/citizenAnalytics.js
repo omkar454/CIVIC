@@ -38,13 +38,16 @@ router.get("/analytics", auth("citizen"), async (req, res) => {
       monthlyCounts[key] = (monthlyCounts[key] || 0) + 1;
     });
 
-    // ✅ Sort chronologically (not alphabetically)
+    // ✅ Sort chronologically (using Date objects)
     const trendData = Object.entries(monthlyCounts)
-      .map(([month, count]) => ({
-        month,
-        count,
-        sortKey: new Date(`${month} 1, ${month.split(" ")[1] || new Date().getFullYear()}`),
-      }))
+      .map(([label, count]) => {
+        const [month, year] = label.split(" ");
+        return {
+          month: label,
+          count,
+          sortKey: new Date(`${month} 1, ${year}`).getTime(),
+        };
+      })
       .sort((a, b) => a.sortKey - b.sortKey)
       .map(({ month, count }) => ({ month, count }));
 
@@ -142,10 +145,10 @@ router.get("/performance-summary", auth("citizen"), async (req, res) => {
         if (period === "quarterly") {
           const [q, year] = label.split(" ");
           const quarter = Number(q.replace("Q", ""));
-          sortKey = new Date(`${year}-${(quarter - 1) * 3 + 1}-01`);
+          sortKey = new Date(year, (quarter - 1) * 3, 1).getTime();
         } else {
           const [month, year] = label.split(" ");
-          sortKey = new Date(`${month} 1, ${year}`);
+          sortKey = new Date(`${month} 1, ${year}`).getTime();
         }
         return { label, ...data, sortKey };
       })

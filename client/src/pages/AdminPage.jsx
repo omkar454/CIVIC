@@ -12,6 +12,8 @@ import {
   Legend,
   LineChart,
   Line,
+  PieChart,
+  Pie,
   ResponsiveContainer,
   Cell,
 } from "recharts";
@@ -34,22 +36,35 @@ export default function AdminPage() {
   const navigate = useNavigate();
 
   const COLORS_CATEGORY = [
+    "#0088FE",
+    "#00C49F",
+    "#FFBB28",
+    "#FF8042",
+    "#A020F0",
     "#1E88E5",
     "#43A047",
-    "#FB8C00",
-    "#E53935",
-    "#8E24AA",
-    "#00ACC1",
-    "#FDD835",
   ];
   const COLORS_STATUS = {
     Open: "#E53935",
     Acknowledged: "#FB8C00",
     "In Progress": "#1E88E5",
     Resolved: "#43A047",
-    Rejected: "#6A1B9A",
-    Closed: "#FF5722",
+    Rejected: "#6B7280",
+    Closed: "#4B5563",
   };
+  const SEVERITY_COLORS = {
+    1: "#4CAF50",
+    2: "#CDDC39",
+    3: "#FFB300",
+    4: "#FB8C00",
+    5: "#D32F2F",
+    "Lvl 1": "#4CAF50",
+    "Lvl 2": "#CDDC39",
+    "Lvl 3": "#FFB300",
+    "Lvl 4": "#FB8C00",
+    "Lvl 5": "#D32F2F",
+  };
+
   const ALL_STATUSES = Object.keys(COLORS_STATUS);
 
   // ---------------- Fetch all users & officers ----------------
@@ -154,44 +169,26 @@ export default function AdminPage() {
     }
   };
 
-  // ---------------- Export Reports ----------------
+  // ---------------- Export Reports for BMC Data Analysis ----------------
   const exportReports = async (format = "json") => {
     try {
-      const res = await API.get("/admin/export/reports");
-      const reports = res.data.reports || [];
-      if (!reports.length) {
-        alert("No reports to export.");
-        return;
-      }
+      // Use query param 'format' to let the server handle formatting
+      const res = await API.get(`/admin/export/reports?format=${format}`, {
+        responseType: format === "csv" ? "text" : "json",
+      });
 
-      let fileContent, mimeType, fileName;
+      let blob, fileName;
       if (format === "json") {
-        fileContent = JSON.stringify(reports, null, 2);
-        mimeType = "application/json";
-        fileName = "reports.json";
-      } else if (format === "csv") {
-        const headers = Object.keys(reports[0]);
-        const csvRows = [
-          headers.join(","),
-          ...reports.map((r) =>
-            headers
-              .map((h) => {
-                let val = r[h];
-                if (typeof val === "object" && val !== null)
-                  val = JSON.stringify(val);
-                if (typeof val === "string")
-                  val = `"${val.replace(/"/g, '""')}"`;
-                return val;
-              })
-              .join(",")
-          ),
-        ];
-        fileContent = csvRows.join("\r\n");
-        mimeType = "text/csv";
-        fileName = "reports.csv";
+        // res.data is the full object: { count, generatedAt, reports }
+        const fileContent = JSON.stringify(res.data, null, 2);
+        blob = new Blob([fileContent], { type: "application/json" });
+        fileName = `bmc_civic_reports_${new Date().toISOString().split("T")[0]}.json`;
+      } else {
+        // res.data is the raw CSV string
+        blob = new Blob([res.data], { type: "text/csv" });
+        fileName = `bmc_civic_reports_${new Date().toISOString().split("T")[0]}.csv`;
       }
 
-      const blob = new Blob([fileContent], { type: mimeType });
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -200,9 +197,10 @@ export default function AdminPage() {
       window.URL.revokeObjectURL(url);
     } catch (err) {
       console.error("Export failed:", err);
-      alert("Failed to export reports.");
+      alert("Failed to export reports. Please try again.");
     }
   };
+
 
   useEffect(() => {
     fetchUsersAndOfficers();
@@ -403,111 +401,158 @@ export default function AdminPage() {
       {renderUserTable(officers, "Officers")}
 
       {/* Export Reports for BMC Data Analysis */}
-      <Card className="border border-blue-200 shadow-lg">
-        <CardContent className="space-y-3">
-          <h2 className="text-xl font-semibold text-blue-700">
-            Send Verified Reports for BMC Data Analysis
+      <Card className="border border-blue-200 shadow-lg bg-blue-50/30 dark:bg-blue-900/10">
+        <CardContent className="space-y-3 pt-6">
+          <h2 className="text-xl font-semibold text-blue-700 dark:text-blue-400 flex items-center gap-2">
+            📊 Comprehensive BMC Data Analysis Export
           </h2>
           <p className="text-gray-600 dark:text-gray-300 text-sm">
-            Export all verified (non-open) reports in structured format for
-            analytical review, performance tracking, and data-driven
-            decision-making at BMC headquarters.
+            Export the complete city-wide dataset in structured format for
+            deep analytical review, bottleneck identification, and data-driven
+            strategic planning at BMC headquarters.
           </p>
           <div className="flex flex-wrap gap-3">
             <Button
-              className="bg-blue-600 hover:bg-blue-700 text-white"
+              className="bg-blue-600 hover:bg-blue-700 text-white shadow-md transition-all active:scale-95"
               onClick={() => exportReports("json")}
             >
               Send as JSON File
             </Button>
             <Button
-              className="bg-green-600 hover:bg-green-700 text-white"
+              className="bg-green-600 hover:bg-green-700 text-white shadow-md transition-all active:scale-95"
               onClick={() => exportReports("csv")}
             >
               Send as CSV File
             </Button>
           </div>
-          <p className="text-xs text-gray-500 italic">
-            *Only includes reports that are resolved, in progress, or rejected
-            (excluding open reports).*
+          <p className="text-xs text-blue-600 dark:text-blue-400 font-medium italic">
+            *Includes ALL status types: Open backlog, In Progress, Resolved, and Rejected reports for full-spectrum analysis.*
           </p>
         </CardContent>
       </Card>
 
-      {/* Analytics */}
+
+      {/* 📊 Advanced Analytics Insights */}
       {analytics && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <Card>
-            <CardContent>
-              <h2 className="text-xl font-semibold mb-4">
-                Reports by Category
-              </h2>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={analytics.byCategory || []}>
-                  <XAxis dataKey="category" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="count">
-                    {(analytics.byCategory || []).map((entry, i) => (
-                      <Cell
-                        key={i}
-                        fill={COLORS_CATEGORY[i % COLORS_CATEGORY.length]}
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Reports by Category */}
+            <Card className="shadow-md border border-gray-100 dark:border-gray-700">
+              <CardContent className="pt-6">
+                <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                  📂 Reports by Category
+                </h2>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={analytics.byCategory || []}>
+                    <XAxis dataKey="category" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                      {(analytics.byCategory || []).map((entry, i) => (
+                        <Cell
+                          key={i}
+                          fill={COLORS_CATEGORY[i % COLORS_CATEGORY.length]}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* Reports by Status */}
+            <Card className="shadow-md border border-gray-100 dark:border-gray-700">
+              <CardContent className="pt-6">
+                <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                  🔄 Reports by Status
+                </h2>
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={analytics.byStatus || []}>
+                    <XAxis dataKey="status" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                      {(analytics.byStatus || []).map((entry, i) => (
+                        <Cell
+                          key={i}
+                          fill={
+                            COLORS_STATUS[entry.status] ||
+                            COLORS_CATEGORY[i % COLORS_CATEGORY.length]
+                          }
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* Severity Distribution - NEW */}
+            <Card className="shadow-md border border-gray-100 dark:border-gray-700">
+              <CardContent className="pt-6">
+                <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                  🚩 Severity Distribution
+                </h2>
+                <ResponsiveContainer width="100%" height={300}>
+                  <PieChart>
+                    <Pie
+                      data={analytics.bySeverity || []}
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={60}
+                      outerRadius={80}
+                      paddingAngle={5}
+                      dataKey="count"
+                      nameKey="level"
+                      label={({ level, percent }) =>
+                        `${level} ${(percent * 100).toFixed(0)}%`
+                      }
+                    >
+                      {(analytics.bySeverity || []).map((entry, i) => (
+                        <Cell
+                          key={i}
+                          fill={SEVERITY_COLORS[entry.severity] || SEVERITY_COLORS[entry.level]}
+                        />
+                      ))}
+                    </Pie>
+                    <Tooltip />
+                    <Legend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+
+            {/* Resolution Trend */}
+            <Card className="shadow-md border border-gray-100 dark:border-gray-700">
+              <CardContent className="pt-6">
+                <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-gray-200 flex items-center gap-2">
+                  📈 Resolution Trend
+                </h2>
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={analytics.resolutionTrend || []}>
+                    <XAxis dataKey="date" />
+                    <YAxis />
+                    <Tooltip />
+                    <Legend />
+                    {ALL_STATUSES.filter(s => s !== "Closed").map((status) => (
+                      <Line
+                        key={status}
+                        type="monotone"
+                        dataKey={status}
+                        stroke={COLORS_STATUS[status]}
+                        strokeWidth={2}
+                        dot={{ r: 4 }}
+                        activeDot={{ r: 6 }}
+                        connectNulls={true}
                       />
                     ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent>
-              <h2 className="text-xl font-semibold mb-4">Reports by Status</h2>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={analytics.byStatus || []}>
-                  <XAxis dataKey="status" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Bar dataKey="count">
-                    {(analytics.byStatus || []).map((entry, i) => (
-                      <Cell
-                        key={i}
-                        fill={
-                          COLORS_STATUS[entry.status] ||
-                          COLORS_CATEGORY[i % COLORS_CATEGORY.length]
-                        }
-                      />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          <Card className="md:col-span-2">
-            <CardContent>
-              <h2 className="text-xl font-semibold mb-4">Resolution Trend</h2>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={analytics.resolutionTrend || []}>
-                  <XAxis dataKey="date" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  {ALL_STATUSES.map((status) => (
-                    <Line
-                      key={status}
-                      type="monotone"
-                      dataKey={status}
-                      stroke={COLORS_STATUS[status]}
-                      connectNulls={true}
-                    />
-                  ))}
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
+                  </LineChart>
+                </ResponsiveContainer>
+              </CardContent>
+            </Card>
+          </div>
         </div>
       )}
     </div>

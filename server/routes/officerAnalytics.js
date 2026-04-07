@@ -39,10 +39,10 @@ router.get("/department-trends", auth("officer"), async (req, res) => {
         };
       }
 
-      trendsMap[key].total++;
+      if (r.status !== "Open") trendsMap[key].total++;
       if (r.status === "Resolved") trendsMap[key].resolved++;
       else if (r.status === "Rejected") trendsMap[key].rejected++;
-      else trendsMap[key].inProgress++;
+      else if (["Acknowledged", "In Progress"].includes(r.status)) trendsMap[key].inProgress++;
     });
 
     // Sort by date and limit to last N months
@@ -115,8 +115,14 @@ router.get("/department-insights", auth("officer"), async (req, res) => {
       }
     });
 
-    const totalReports = allReports.length;
-    const efficiencyPct = (resolvedCount / totalReports) * 100 || 0;
+    const openCount = allReports.filter((r) => r.status === "Open").length;
+    const totalReports = allReports.length - openCount;
+
+    // Efficiency: Resolved / New Total (which is already Total - Open)
+    const efficiencyPct = totalReports > 0
+      ? (resolvedCount / totalReports) * 100
+      : 0;
+
     const avgResolutionDays = resolvedCount
       ? totalResolutionDays / resolvedCount
       : 0;
@@ -174,9 +180,11 @@ router.get("/performance-summary", auth("officer"), async (req, res) => {
         summaryMap[key] = { period: key, total: 0, resolved: 0, rejected: 0 };
       }
 
-      summaryMap[key].total++;
-      if (r.status === "Resolved") summaryMap[key].resolved++;
-      else if (r.status === "Rejected") summaryMap[key].rejected++;
+      if (r.status !== "Open") {
+        summaryMap[key].total++;
+        if (r.status === "Resolved") summaryMap[key].resolved++;
+        else if (r.status === "Rejected") summaryMap[key].rejected++;
+      }
     });
 
     const summary = Object.values(summaryMap)

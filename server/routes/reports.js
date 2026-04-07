@@ -692,15 +692,23 @@ router.get(
         filter.department = req.user.department;
       }
 
-      // Citizens can see all text reports → no filter by reporter
+      const page = parseInt(req.query.page) || 1;
+      const limit = parseInt(req.query.limit) || 10;
+      const skip = (page - 1) * limit;
 
+      const total = await TextAddressReport.countDocuments(filter);
       const reports = await TextAddressReport.find(filter)
         .populate("reporter", "name email role")
         .populate("assignedTo", "name email role department")
-        .sort({ createdAt: -1 });
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit);
 
       res.json({
-        total: reports.length,
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
         reports: reports.map((r) => ({
           ...r.toObject(),
           lat: null,

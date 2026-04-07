@@ -11,6 +11,8 @@ export default function ReportsLists({ darkMode }) {
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({});
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferData, setTransferData] = useState({
     reportId: "",
@@ -26,7 +28,7 @@ export default function ReportsLists({ darkMode }) {
   const fetchReports = async () => {
     setLoading(true);
     try {
-      const queryObj = {};
+      const queryObj = { page, limit: 10 };
       if (filters.category) queryObj.category = filters.category;
       if (filters.status) queryObj.status = filters.status;
       if (filters.severity) queryObj.severity = filters.severity;
@@ -46,17 +48,25 @@ export default function ReportsLists({ darkMode }) {
       if (search) queryObj.search = search;
 
       const query = new URLSearchParams(queryObj).toString();
-      const res = await API.get(`/reports?${query}`);
-      let allReports = res.data.reports || [];
+      
+      const [res, textRes] = await Promise.all([
+        API.get(`/reports?${query}`),
+        API.get(`/reports/textreports?${query}`)
+      ]);
 
-      const textRes = await API.get("/reports/textreports");
-      const textReports = textRes.data.reports.map((r) => ({
+      const geoReports = res.data.reports || [];
+      const textReports = (textRes.data.reports || []).map((r) => ({
         ...r,
         isTextReport: true,
       }));
-      allReports = [...allReports, ...textReports];
 
-      setReports(allReports);
+      const combined = [...geoReports, ...textReports].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      );
+
+      setReports(combined);
+      setTotalPages(Math.max(res.data.totalPages || 1, textRes.data.totalPages || 1));
+
     } catch (err) {
       console.error("Failed to fetch reports:", err);
       setReports([]);
@@ -66,8 +76,13 @@ export default function ReportsLists({ darkMode }) {
   };
 
   useEffect(() => {
-    fetchReports();
+    setPage(1);
   }, [filters, search]);
+
+  useEffect(() => {
+    fetchReports();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [filters, search, page]);
 
   // Citizen Vote
   const handleVote = async (report) => {
@@ -169,12 +184,12 @@ const handleTransfer = async () => {
               </tr>
             </thead>
             <tbody>
-              {reports
-                .filter((r) => !(userRole === "officer" && r.status === "Open")) // <-- filter Open for officer
-                .map((r) => {
+              {reports.map((r) => {
                   const hasVoted = r.voters?.includes(userId);
                   const canVote =
-                    userRole === "citizen" && r.reporter?._id !== userId;
+                    userRole === "citizen" &&
+                    r.reporter?._id !== userId &&
+                    ["Acknowledged", "In Progress"].includes(r.status);
                   return (
                     <tr
                       key={r._id}
@@ -241,6 +256,33 @@ const handleTransfer = async () => {
                 })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* 🧭 Pagination Controls */}
+      {reports.length > 0 && (
+        <div className="flex justify-center items-center space-x-6 pb-8 pt-4">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page === 1}
+            onClick={() => setPage(page - 1)}
+            className="font-bold shadow-sm"
+          >
+            ← Previous
+          </Button>
+          <span className="text-sm text-gray-600 dark:text-gray-400 font-medium whitespace-nowrap">
+            Page <span className="text-blue-600 font-bold px-1">{page}</span> of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page >= totalPages}
+            onClick={() => setPage(page + 1)}
+            className="font-bold shadow-sm"
+          >
+            Next →
+          </Button>
         </div>
       )}
 
