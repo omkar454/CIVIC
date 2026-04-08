@@ -17,6 +17,129 @@ const redIcon = new L.Icon({
   iconAnchor: [12, 41],
 });
 
+// --- HELPERS ---
+const parseDate = (d) => {
+  if (!d) return null;
+  if (typeof d === 'string') return new Date(d);
+  if (d.$date) return new Date(d.$date);
+  const parsed = new Date(d);
+  return isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const normalize = (s) => s?.toLowerCase().trim();
+
+const statusColor = {
+  Open: "bg-red-100 text-red-700",
+  Acknowledged: "bg-yellow-100 text-yellow-700",
+  "In Progress": "bg-blue-100 text-blue-700",
+  Resolved: "bg-green-100 text-green-700",
+  Rejected: "bg-gray-200 text-gray-700",
+};
+
+function SLASection({ report }) {
+  const start = parseDate(report.slaStartDate);
+  if (!start) return null;
+
+  const totalMs = (report.slaDays || 0) * 24 * 60 * 60 * 1000;
+  const stop = report.status === "Resolved" || report.status === "Rejected";
+  const isPaused = !!report.pendingStatus;
+
+  const calculateRemaining = () => {
+    const end = parseDate(report.slaEndDate);
+    const pausedAt = parseDate(report.slaPausedAt);
+
+    if (stop && end) {
+      return Math.max(totalMs - (end - start), 0);
+    }
+    if (isPaused && pausedAt) {
+      return Math.max(totalMs - (pausedAt - start), 0);
+    }
+    const elapsed = new Date() - start;
+    return Math.max(totalMs - elapsed, 0);
+  };
+
+  const initialRemaining = calculateRemaining();
+  const [remainingTime, setRemainingTime] = React.useState(isNaN(initialRemaining) ? 0 : initialRemaining);
+
+  React.useEffect(() => {
+    if (stop || isPaused) {
+      setRemainingTime(calculateRemaining());
+      return;
+    }
+    
+    const interval = setInterval(() => {
+      setRemainingTime(calculateRemaining());
+    }, 1000);
+    
+    return () => clearInterval(interval);
+  }, [report.slaStartDate, report.status, report.pendingStatus, report.slaPausedAt]);
+
+  const toTimeParts = (ms) => {
+    if (isNaN(ms)) return { days: 0, hours: 0, minutes: 0, seconds: 0 };
+    const totalSeconds = Math.floor(ms / 1000);
+    const days = Math.floor(totalSeconds / (3600 * 24));
+    const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    return { days, hours, minutes, seconds };
+  };
+
+  const parts = toTimeParts(remainingTime);
+  const isOverdue = !stop && remainingTime === 0;
+  const progressPct = totalMs > 0 ? Math.min(((totalMs - remainingTime) / totalMs) * 100, 100) : 0;
+
+  return (
+    <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3">
+      <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+        SLA Countdown
+      </h3>
+
+      <p className="text-gray-700 dark:text-gray-300">
+        <strong>Total SLA:</strong> {report.slaDays} days
+      </p>
+
+      <div className="flex items-center justify-between mt-1">
+        <p
+          className={`font-semibold text-lg ${
+            stop
+              ? "text-green-600 dark:text-green-400"
+              : isOverdue
+              ? "text-red-600 dark:text-red-400"
+              : "text-blue-600 dark:text-blue-400"
+          }`}
+        >
+          {stop ? (
+            <span>✅ Completed within SLA</span>
+          ) : isOverdue ? (
+            <span>🚨 SLA Breached</span>
+          ) : (
+            <span>
+              ⏳ {parts.days}d {parts.hours}h {parts.minutes}m {parts.seconds}s left
+            </span>
+          )}
+        </p>
+        {isPaused && !stop && (
+          <Badge className="bg-yellow-100 text-yellow-700 border-yellow-200 animate-pulse">
+            PAUSED ⏸️
+          </Badge>
+        )}
+      </div>
+
+      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden">
+        <div
+          className={`h-full transition-all duration-1000 ${
+            stop ? "bg-green-500" : isOverdue ? "bg-red-500" : "bg-blue-600"
+          }`}
+          style={{ width: `${progressPct}%` }}
+        ></div>
+      </div>
+      <p className="text-[10px] text-gray-400">
+        Start: {start ? start.toLocaleString() : "N/A"}
+      </p>
+    </div>
+  );
+}
+
 export default function ReportDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -31,7 +154,6 @@ export default function ReportDetail() {
   const [officerFiles, setOfficerFiles] = useState([]); // selected files
   const [uploadedUrls, setUploadedUrls] = useState([]); // Cloudinary uploaded URLs
   const [qrCodeUrl, setQrCodeUrl] = useState(null);
-
 
   const availableStatuses = [
     "Open",
@@ -90,91 +212,6 @@ export default function ReportDetail() {
       setLoading(false);
     }
   };
-function SLASection({ report }) {
-  const start = new Date(report.slaStartDate);
-  const end = report.slaEndDate ? new Date(report.slaEndDate) : null;
-  const totalMs = report.slaDays * 24 * 60 * 60 * 1000;
-  const stop = report.status === "Resolved" || report.status === "Rejected";
-
-  const [remainingTime, setRemainingTime] = React.useState(() => {
-    const now = new Date();
-    const elapsed = now - start;
-    return Math.max(totalMs - elapsed, 0);
-  });
-
-  React.useEffect(() => {
-    if (stop) return;
-    const interval = setInterval(() => {
-      const now = new Date();
-      const elapsed = now - start;
-      const remaining = Math.max(totalMs - elapsed, 0);
-      setRemainingTime(remaining);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [report.slaStartDate, report.status]);
-
-  const toTimeParts = (ms) => {
-    const totalSeconds = Math.floor(ms / 1000);
-    const days = Math.floor(totalSeconds / (3600 * 24));
-    const hours = Math.floor((totalSeconds % (3600 * 24)) / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    return { days, hours, minutes, seconds };
-  };
-
-  const parts = toTimeParts(remainingTime);
-  const isOverdue = !stop && remainingTime === 0;
-  const progressPct = Math.min(
-    ((totalMs - remainingTime) / totalMs) * 100,
-    100
-  );
-
-  return (
-    <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3">
-      <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-        SLA Countdown
-      </h3>
-
-      <p className="text-gray-700 dark:text-gray-300">
-        <strong>Total SLA:</strong> {report.slaDays} days
-      </p>
-
-      <div className="flex items-center justify-between mt-1">
-        <p
-          className={`font-semibold text-lg ${
-            stop
-              ? "text-green-600 dark:text-green-400"
-              : isOverdue
-              ? "text-red-600 dark:text-red-400"
-              : "text-blue-600 dark:text-blue-400"
-          }`}
-        >
-          {stop
-            ? report.status === "Resolved"
-              ? "✅ SLA stopped — report resolved"
-              : "🚫 SLA stopped — report rejected"
-            : isOverdue
-            ? "⚠️ SLA Overdue"
-            : `⏳ ${parts.days}d ${parts.hours}h ${parts.minutes}m ${parts.seconds}s left`}
-        </p>
-      </div>
-
-      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3 mt-3">
-        <div
-          className={`h-3 rounded-full transition-all duration-500 ${
-            isOverdue ? "bg-red-500" : stop ? "bg-green-500" : "bg-blue-500"
-          }`}
-          style={{ width: `${progressPct}%` }}
-        ></div>
-      </div>
-
-      <div className="text-sm text-gray-600 dark:text-gray-400 mt-2">
-        <p>Start: {start.toLocaleString()}</p>
-        {end && <p>End: {end.toLocaleString()}</p>}
-      </div>
-    </div>
-  );
-}
 
  const handleAdminDecision = async (isApproved) => {
    if (!adminNote.trim()) {
@@ -368,23 +405,16 @@ const generateQRCode = async () => {
   if (loading)
     return (
       <p className="text-center mt-10 text-lg text-gray-500">
-        Loading report...
+        🚀 AI-Augmented Analytics: Calculating Priority & Status...
       </p>
     );
-  if (!report)
+  if (!report) {
     return (
-      <p className="text-center mt-10 text-lg text-gray-500">
-        Report not found
-      </p>
+      <div className="text-center mt-10 p-10 bg-red-50 text-red-700 rounded-2xl border border-red-200">
+        ❌ Report not found or failed to load. 🚀 AI Engine offline for this entry.
+      </div>
     );
-
-  const statusColor = {
-    Open: "bg-red-100 text-red-700",
-    Acknowledged: "bg-yellow-100 text-yellow-700",
-    "In Progress": "bg-blue-100 text-blue-700",
-    Resolved: "bg-green-100 text-green-700",
-    Rejected: "bg-gray-200 text-gray-700",
-  };
+  }
 
   const isReporter = report.reporter?._id === userId;
   const isDeptOfficer = role === "officer" && normalize(report.department) === normalize(userDept);
@@ -555,35 +585,94 @@ const generateQRCode = async () => {
           </p>
         </div>
       )}
-      {/* ---------------- Media Section ---------------- */}
-      {report.media?.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3">
-          <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
-            Media (Citizen & Officer Proofs)
-          </h2>
-          <div className="flex flex-wrap gap-3">
-            {report.media.map((m, i) =>
-              m.mime.startsWith("image/") ? (
-                <img
-                  key={i}
-                  src={m.url}
-                  alt="media"
-                  className="w-48 h-48 object-cover rounded border cursor-pointer hover:scale-105 transition"
-                  onClick={() => window.open(m.url, "_blank")}
-                />
-              ) : (
-                <video
-                  key={i}
-                  src={m.url}
-                  controls
-                  className="w-64 h-48 object-cover rounded border cursor-pointer hover:scale-105 transition"
-                  onClick={() => window.open(m.url, "_blank")}
-                />
-              )
+      {/* ---------------- Media Gallery: Citizen & Officer Proofs (Separable) ---------------- */}
+      {(() => {
+        // 1. Citizen Evidence (Original)
+        const citizenMedia = report.media || [];
+        
+        // 2. Latest Officer Proofs (from statusHistory)
+        const officerMedia = [];
+        if (report.statusHistory?.length > 0) {
+          // Look for the last entry that matches a resolution attempt
+          const lastResolutionEntry = [...report.statusHistory]
+            .reverse()
+            .find(s => (s.status === "Resolved" || s.status === "Rejected") && s.media?.length > 0);
+          
+          if (lastResolutionEntry) {
+            officerMedia.push(...lastResolutionEntry.media);
+          }
+        }
+
+        if (citizenMedia.length === 0 && officerMedia.length === 0) return null;
+
+        return (
+          <div className="space-y-6">
+            {/* Citizen Evidence Section */}
+            {citizenMedia.length > 0 && (
+              <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3 border-l-4 border-blue-500">
+                <div className="flex justify-between items-baseline">
+                  <h2 className="text-xl font-bold text-gray-800 dark:text-gray-200">
+                    📸 Citizen Evidence
+                  </h2>
+                  <span className="text-xs text-gray-400 font-medium italic">Original Report Media</span>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  {citizenMedia.map((m, i) => (
+                    <div key={i} className="relative group">
+                      {m.mime?.startsWith("image/") ? (
+                        <img
+                          src={m.url}
+                          alt="citizen-evidence"
+                          className="w-48 h-48 object-cover rounded-lg border-2 border-transparent group-hover:border-blue-400 transition cursor-pointer"
+                          onClick={() => window.open(m.url, "_blank")}
+                        />
+                      ) : (
+                        <video
+                          src={m.url}
+                          controls
+                          className="w-64 h-48 object-cover rounded-lg border-2 border-transparent group-hover:border-blue-400 transition"
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Officer Resolution Proof Section */}
+            {officerMedia.length > 0 && (
+              <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3 border-l-4 border-green-500">
+                <div className="flex justify-between items-baseline">
+                  <h2 className="text-xl font-bold text-green-700 dark:text-green-400">
+                    ✅ Officer Resolution Proofs
+                  </h2>
+                  <span className="text-xs text-gray-400 font-medium italic">Latest Work Submission</span>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  {officerMedia.map((m, i) => (
+                    <div key={i} className="relative group">
+                      {m.mime?.startsWith("image/") ? (
+                        <img
+                          src={m.url}
+                          alt="officer-proof"
+                          className="w-48 h-48 object-cover rounded-lg border-2 border-transparent group-hover:border-green-400 transition cursor-pointer"
+                          onClick={() => window.open(m.url, "_blank")}
+                        />
+                      ) : (
+                        <video
+                          src={m.url}
+                          controls
+                          className="w-64 h-48 object-cover rounded-lg border-2 border-transparent group-hover:border-green-400 transition"
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ---------------- Map Section ---------------- */}
       {!report.isTextReport && report.lat && report.lng ? (
@@ -773,7 +862,7 @@ const generateQRCode = async () => {
           </h3>
           <div className="space-y-2">
             {report.statusHistory
-              .sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt))
+              .sort((a, b) => (parseDate(a.at || a.createdAt) || 0) - (parseDate(b.at || b.createdAt) || 0))
               .map((s, idx) => {
                 // Compute display status based on admin verification
                 const getDisplayStatus = (statusObj) => {
@@ -793,6 +882,7 @@ const generateQRCode = async () => {
                 };
 
                 const displayStatus = getDisplayStatus(s);
+                const statusDate = parseDate(s.at || s.createdAt);
 
                 return (
                   <div
@@ -814,14 +904,14 @@ const generateQRCode = async () => {
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                       Changed by: {s.by?.name || "Officer"} |{" "}
-                      {new Date(s.createdAt).toLocaleString()}
+                      {statusDate ? statusDate.toLocaleString() : "Date Unknown"}
                     </p>
 
                     {/* Officer Proof Media */}
                     {s.media?.length > 0 && (
                       <div className="flex flex-wrap gap-2 mt-2">
                         {s.media.map((m, j) =>
-                          m.mime.startsWith("image/") ? (
+                          m.mime?.startsWith("image/") ? (
                             <img
                               key={j}
                               src={m.url}
@@ -834,7 +924,6 @@ const generateQRCode = async () => {
                               key={j}
                               src={m.url}
                               controls
-                              onClick={() => window.open(m.url, "_blank")}
                               className="w-40 h-32 object-cover rounded border cursor-pointer hover:scale-105 transition"
                             />
                           )

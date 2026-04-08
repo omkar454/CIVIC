@@ -7,7 +7,7 @@ import mongoose from "mongoose";
 const StatusMediaSchema = new mongoose.Schema({
   url: { type: String, required: true },
   mime: { type: String, required: true },
-  uploadedBy: { type: String, enum: ["citizen", "officer"], required: true },
+  uploadedBy: { type: String, enum: ["citizen", "officer", "AI"], required: true },
   uploadedAt: { type: Date, default: Date.now },
 });
 
@@ -20,7 +20,7 @@ const StatusHistorySchema = new mongoose.Schema({
   by: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
   actorRole: {
     type: String,
-    enum: ["citizen", "officer", "admin", ""],
+    enum: ["citizen", "officer", "admin", "AI", ""],
     default: "",
   },
   note: { type: String, default: "" },
@@ -46,7 +46,7 @@ const CommentSchema = new mongoose.Schema({
 const MediaSchema = new mongoose.Schema({
   url: { type: String },
   mime: { type: String },
-  uploadedBy: { type: String, enum: ["citizen", "officer"] },
+  uploadedBy: { type: String, enum: ["citizen", "officer", "AI"] },
 });
 
 // -----------------------------
@@ -59,7 +59,7 @@ const AdminVerificationSchema = new mongoose.Schema({
   history: [
     {
       admin: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-      action: { type: String, enum: ["approved", "rejected", "auto-approved", "auto-rejected"] },
+      action: { type: String, enum: ["approved", "rejected", "auto-approved", "auto-rejected", "AI"] },
       note: { type: String },
       createdAt: { type: Date, default: Date.now },
     },
@@ -73,7 +73,7 @@ const CitizenAdminVerificationSchema = new mongoose.Schema({
   history: [
     {
       admin: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-      action: { type: String, enum: ["approved", "rejected", "auto-approved", "auto-rejected"] },
+      action: { type: String, enum: ["approved", "rejected", "auto-approved", "auto-rejected", "AI"] },
       note: { type: String },
       createdAt: { type: Date, default: Date.now },
     },
@@ -167,6 +167,7 @@ const ReportSchema = new mongoose.Schema(
       enum: ["Pending", "On Time", "Overdue", null],
       default: "Pending",
     },
+    slaPausedAt: { type: Date, default: null }, // 🔹 Paused during admin verification
     questionToOfficer: { type: String, default: "" },
     officerProofMedia: [{ url: String, mime: String }],
 
@@ -197,10 +198,26 @@ ReportSchema.pre("save", function (next) {
   const votes = this.votes || 0;
   this.priorityScore = severity ? severity * 10 + votes * 5 : votes * 5;
 
-  // 🕒 SLA Days based on Priority (adjust as needed)
+  // 🕒 SLA Days based on Priority
   if (this.priorityScore >= 60) this.slaDays = 2; // high urgency
   else if (this.priorityScore >= 30) this.slaDays = 4; // medium
   else this.slaDays = 7; // low
+
+  // ⏸ PAUSE LOGIC: If report is pending admin verification
+  if (this.isModified("pendingStatus")) {
+    if (this.pendingStatus) {
+      // Entering Verification: Start Pause
+      this.slaPausedAt = new Date();
+    } else {
+      // Exiting Verification
+      if (this.slaPausedAt && this.slaStartDate && !["Resolved", "Rejected"].includes(this.status)) {
+        // RESUME: Admin rejected officer update. Adjust StartDate to "pause" the clock.
+        const pauseDuration = Date.now() - this.slaPausedAt.getTime();
+        this.slaStartDate = new Date(this.slaStartDate.getTime() + pauseDuration);
+      }
+      this.slaPausedAt = null;
+    }
+  }
 
   // 🚫 Stop SLA for resolved/rejected
   if (["Resolved", "Rejected"].includes(this.status)) {
@@ -217,9 +234,11 @@ ReportSchema.pre("save", function (next) {
   }
 
   // ⏱️ If still pending, check if overdue
+  // Only calculate if NOT paused
   if (
     this.slaStartDate &&
     !this.slaEndDate &&
+    !this.pendingStatus &&
     ["Acknowledged", "In Progress"].includes(this.status)
   ) {
     const diffDays = Math.floor(

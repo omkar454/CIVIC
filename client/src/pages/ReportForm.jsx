@@ -293,10 +293,16 @@ export default function ReportForm() {
             textCategory: visionRes.data.textCategory,
             isAIVerified: visionRes.data.isAIVerified,
             textEmbedding: visionRes.data.textEmbedding,
-            imageEmbedding: visionRes.data.imageEmbedding
+            imageEmbedding: visionRes.data.imageEmbedding,
+            annotatedImageUrl: visionRes.data.annotatedImageUrl
           };
         } catch (visionError) {
           console.warn("Vision engine analysis failed:", visionError.message);
+        }
+
+        // 🧠 Replace original image with Annotated AI Image if available
+        if (visionData.annotatedImageUrl) {
+          mediaURLs[0].url = visionData.annotatedImageUrl;
         }
       }
 

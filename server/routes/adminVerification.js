@@ -212,6 +212,7 @@ router.get("/pending", auth("admin"), async (req, res) => {
       $or: [
         { "citizenAdminVerification.verified": null },
         { citizenAdminVerification: { $exists: false } },
+        { pendingStatus: { $in: ["Resolved", "Rejected"] } },
       ],
     })
       .populate("reporter", "name email role")
@@ -232,6 +233,7 @@ router.get("/pending", auth("admin"), async (req, res) => {
       $or: [
         { "citizenAdminVerification.verified": null },
         { citizenAdminVerification: { $exists: false } },
+        { pendingStatus: { $in: ["Resolved", "Rejected"] } },
       ],
     })
       .populate("reporter", "name email role")
@@ -246,16 +248,25 @@ router.get("/pending", auth("admin"), async (req, res) => {
       isTextReport: true,
     }));
 
-    // 3️⃣ Combine all
-    const allReports = [
-      ...geoReportsWithAddress.map((r) => ({ ...r, isTextReport: false })),
-      ...textReportsProcessed,
-    ];
-
-    // Sort descending by creation date
+    // 4️⃣ Sort & Extract Pending Proofs for UI
     allReports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
-    res.json(allReports);
+    const finalReports = allReports.map((r) => {
+      // If there's a pending status, find the media from the officer's latest update in statusHistory
+      if (r.pendingStatus && r.statusHistory?.length > 0) {
+        // Look for the last entry that matches the pending status
+        const lastRelevantUpdate = [...r.statusHistory]
+          .reverse()
+          .find((h) => h.status === r.pendingStatus && h.media?.length > 0);
+        
+        if (lastRelevantUpdate) {
+          r.pendingProofs = lastRelevantUpdate.media;
+        }
+      }
+      return r;
+    });
+
+    res.json(finalReports);
   } catch (err) {
     console.error("Fetch pending reports error:", err);
     res.status(500).json({ message: "Server error" });

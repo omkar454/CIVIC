@@ -178,22 +178,13 @@ useEffect(() => {
     [reports]
   );
 
-  // 🛡️ Admin: Consolidate Pending Verifications (AI Uncertainty cases)
+  // 🛡️ Admin: Consolidate Pending Verifications (Resolution Submissions Only)
   const adminPendingVerifications = useMemo(() => {
     if (role !== "admin") return [];
     return reports.filter(r => {
-      // Exclude reports that are in initial or final finalized states
-      if (["Open", "Resolved", "Rejected"].includes(r.status)) return false;
-
-      // Check if already verified by AI or Admin
-      const isFinalVerified = r.adminVerification?.verified !== null && r.adminVerification?.verified !== undefined;
-
-      // 1. Final Resolution Verification (Officer finished work but AI uncertain)
-      // We check ONLY the 'pendingStatus' field for reports NOT yet marked as Resolved/Rejected centrally
-      const isPendingFinal = ["Resolved", "Rejected"].includes(r.pendingStatus);
-      const needsReview = isPendingFinal && !isFinalVerified;
-
-      return needsReview;
+      // ONLY Final Resolution/Rejection Verification (Officer submitted update but Admin hasn't finalized THIS instance)
+      // If pendingStatus is set, it means an officer is actively seeking approval for a state change.
+      return ["Resolved", "Rejected"].includes(r.pendingStatus);
     });
   }, [reports, role]);
 
@@ -210,8 +201,8 @@ useEffect(() => {
       // Accurate filtering: Citizens only see their personal impact in summary charts
       if (role === "citizen" && r.reporter?._id !== userData?._id) return;
       
-      // CONSISTENCY: All roles now show Status Breakdown for their context
-      const key = r.status || "Open";
+      // BRANCHED LOGIC: Officers see Status distribution, Citizens/Admins see Category distribution
+      const key = role === "officer" ? (r.status || "Open") : (r.category || "General");
       counts[key] = (counts[key] || 0) + 1;
     });
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
@@ -489,7 +480,7 @@ useEffect(() => {
         {/* Graph 1: Status Distribution */}
         <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow-md border border-gray-100 dark:border-gray-700">
           <h3 className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-200 flex items-center gap-2">
-            📊 Status Distribution
+            📊 {role === "officer" ? "Status Distribution" : "Category Distribution"}
             <span className="text-xs font-normal text-gray-500">
               ({role === "citizen" ? "Personal Records" : role === "officer" ? `${userDepartment} Records` : "City-wide Activity"})
             </span>

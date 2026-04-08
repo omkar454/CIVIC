@@ -8,3 +8,8 @@ requests
 python-multipart
 sentence-transformers
 scikit-learn
+cloudinary 
+python-dotenv 
+opencv-python 
+numpy 
+Pillow

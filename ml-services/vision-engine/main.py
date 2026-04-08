@@ -63,7 +63,8 @@ async def analyze_image(request: VisionAnalysisRequest):
         "detectedObjects": detected_tags,
         "hasMultipleObjects": len(detected_tags) > 1,
         "textEmbedding": text_embedding,
-        "imageEmbedding": image_embedding
+        "imageEmbedding": image_embedding,
+        "annotatedImageUrl": cat_results.get("annotatedImageUrl")
     }
 
 @app.post("/api/text/embed")

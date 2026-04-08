@@ -10,6 +10,18 @@ import fetch from "node-fetch";
 
 const router = express.Router();
 
+/* ------------------------------------------------------------------
+   🧩 Helper: Simplified notification creator
+-------------------------------------------------------------------*/
+async function createNotification(userId, message) {
+  if (!userId || !message) return;
+  try {
+    await Notification.create({ user: userId, message });
+  } catch (err) {
+    console.error("❌ Notification error:", err.message);
+  }
+}
+
 /* ------------------------------------------------------------
    🗂 Category → Department mapping
 ------------------------------------------------------------ */
@@ -319,6 +331,12 @@ router.post("/", auth("citizen"), async (req, res) => {
         }));
         await Notification.insertMany(notifications);
       }
+    } else {
+      // 🔔 NEW: Notify Admins about manual review required
+      const admins = await User.find({ role: "admin" }).select("_id");
+      for (const a of admins) {
+        await createNotification(a._id, `📋 [New Report] A new ${finalCategory} report requires manual verification.`);
+      }
     }
 
     res.status(201).json({
@@ -365,7 +383,12 @@ router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
     if (user.role === "officer") {
       let historyLogged = false;
       if (status === "In Progress") {
+        const oldStatus = report.status;
         report.status = "In Progress";
+        // 🔔 NEW: Notify citizen that work has started
+        if (oldStatus !== "In Progress") {
+          await createNotification(report.reporter._id, `🛠️ Work has started on your report "${report.title}". Status: In Progress.`);
+        }
       } else if (status === "Resolved" || status === "Rejected") {
         const isFraud = similarityScore > 0.98;
         const isMismatch = similarityScore < 0.3;
@@ -529,11 +552,20 @@ router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
       }
 
       // Notify citizen
-      await new Notification({
-        user: report.reporter._id,
-        message: `✅ Your report "${report.title
-          }" has been ${report.status.toLowerCase()} by admin.`,
-      }).save();
+      await createNotification(
+        report.reporter._id,
+        `✅ Your report "${report.title}" has been ${report.status.toLowerCase()} by admin.`
+      );
+
+      // 🔔 NEW: Notify assigned officer about the admin's decision
+      if (report.assignedTo) {
+        await createNotification(
+          report.assignedTo._id || report.assignedTo,
+          status === "Verified - Resolved"
+            ? `✅ Admin approved your resolution for report "${report.title}".`
+            : `❌ Admin rejected your resolution for report "${report.title}". Note: ${comment || "No note"}`
+        );
+      }
     }
 
     // ----------------------------
@@ -912,6 +944,9 @@ router.post("/:id/assign", auth("admin"), async (req, res) => {
 
     report.assignedTo = officerId;
     await report.save();
+
+    // 🔔 NEW: Notify the assigned officer
+    await createNotification(officerId, `📋 Admin has assigned you a new task: "${report.title}".`);
 
     res.json({ message: "Report assigned successfully", report });
   } catch (err) {

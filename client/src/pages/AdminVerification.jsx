@@ -121,33 +121,50 @@ export default function AdminVerification() {
 
   // ---------------- Admin Verification ----------------
   const handleAdminDecision = async (reportId, isApproved) => {
+    const report = reports.find((r) => r._id === reportId);
+    const isStatusUpdate = !!report?.pendingStatus;
     const note = adminNotes[reportId];
-    const severity = selectedSeverity[reportId];
-    const categoriesArr = selectedCategories[reportId] || []; // ✅ CORRECTED
-
+    
     if (!note?.trim()) {
       alert("Please provide a note for verification decision.");
       return;
     }
 
-    if (isApproved && (!severity || severity < 1 || severity > 5)) {
-      alert("Please select severity (1–5) before approving.");
-      return;
-    }
-    
-    if (isApproved && categoriesArr.length === 0) {
-      alert("Please select at least one category before approving.");
-      return;
+    // Initial verification requirements
+    if (!isStatusUpdate) {
+      const severity = selectedSeverity[reportId];
+      const categoriesArr = selectedCategories[reportId] || [];
+
+      if (isApproved && (!severity || severity < 1 || severity > 5)) {
+        alert("Please select severity (1–5) before approving.");
+        return;
+      }
+      
+      if (isApproved && categoriesArr.length === 0) {
+        alert("Please select at least one category before approving.");
+        return;
+      }
     }
 
     setActionLoading(reportId);
     try {
-      await API.post(`/admin/verification/${reportId}/verify`, {
-        approve: isApproved,
-        note,
-        severity: isApproved ? Number(severity) : undefined,
-        categories: isApproved ? categoriesArr : undefined,
-      });
+      if (isStatusUpdate) {
+        // Verification for Officer Status Updates
+        await API.post(`/admin/verify-report/${reportId}`, {
+          approve: isApproved,
+          note,
+        });
+      } else {
+        // Initial Citizen Report Verification
+        const severity = selectedSeverity[reportId];
+        const categoriesArr = selectedCategories[reportId] || [];
+        await API.post(`/admin/verification/${reportId}/verify`, {
+          approve: isApproved,
+          note,
+          severity: isApproved ? Number(severity) : undefined,
+          categories: isApproved ? categoriesArr : undefined,
+        });
+      }
 
       // Cleanup local state
       setSelectedSeverity((prev) => {
