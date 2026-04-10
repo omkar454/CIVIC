@@ -120,7 +120,7 @@ router.post("/:id/vote", auth("citizen"), async (req, res) => {
 
     // 🧠 Module 3: Refresh Smart Priority Score on Vote change
     if (type === "geo") {
-      calculateSmartPriority(report);
+      await calculateSmartPriority(report);
     }
 
     // Notify reporter

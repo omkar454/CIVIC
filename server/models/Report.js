@@ -204,14 +204,27 @@ const ReportSchema = new mongoose.Schema(
 
 // 🔹 Calculate Priority and SLA Logic
 ReportSchema.pre("save", function (next) {
-  const severity = this.severity ?? 0;
-  const votes = this.votes || 0;
-  this.priorityScore = severity ? severity * 10 + votes * 5 : votes * 5;
+  // 1. Sync Priority Score with AI or Legacy Formula
+  if (this.smartPriorityScore > 0) {
+    this.priorityScore = this.smartPriorityScore; // AI is the source of truth
+  } else {
+    // Legacy fallback
+    const severity = this.severity ?? 0;
+    const votes = this.votes || 0;
+    this.priorityScore = severity ? severity * 10 + votes * 5 : votes * 5;
+  }
 
-  // 🕒 SLA Days based on Priority
-  if (this.priorityScore >= 60) this.slaDays = 2; // high urgency
-  else if (this.priorityScore >= 30) this.slaDays = 4; // medium
-  else this.slaDays = 7; // low
+  // 🕒 SLA Days based on AI Smart Priority (or legacy fallback)
+  if (this.smartPriorityScore > 0) {
+    if (this.smartPriorityScore >= 80) this.slaDays = 2; // high urgency
+    else if (this.smartPriorityScore >= 50) this.slaDays = 4; // medium
+    else this.slaDays = 7; // low
+  } else {
+    // Legacy fallback
+    if (this.priorityScore >= 60) this.slaDays = 2;
+    else if (this.priorityScore >= 30) this.slaDays = 4;
+    else this.slaDays = 7;
+  }
 
   // ⏸ PAUSE LOGIC: If report is pending admin verification
   if (this.isModified("pendingStatus")) {

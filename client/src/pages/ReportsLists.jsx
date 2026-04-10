@@ -89,10 +89,8 @@ export default function ReportsLists({ darkMode }) {
     try {
       if (!report.voters?.includes(userId)) {
         await API.post(`/votesComments/${report._id}/vote`);
-      } else {
-        await API.post(`/votesComments/${report._id}/cancel-vote`);
+        fetchReports();
       }
-      fetchReports();
     } catch (err) {
       console.error("Vote failed:", err);
       alert(err.response?.data?.message || "Failed to submit vote");
@@ -232,13 +230,19 @@ const handleTransfer = async () => {
                         </Link>
 
                         {userRole === "citizen" && canVote && (
-                          <Button
-                            size="sm"
-                            variant={hasVoted ? "destructive" : "outline"}
-                            onClick={() => handleVote(r)}
-                          >
-                            {hasVoted ? "Cancel Vote" : "Vote"}
-                          </Button>
+                          hasVoted ? (
+                            <Badge className="bg-green-100 text-green-700 border-green-200 py-1.5 px-3 whitespace-nowrap">
+                              Already Voted ✅
+                            </Badge>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleVote(r)}
+                            >
+                              Vote
+                            </Button>
+                          )
                         )}
 
                         {userRole === "officer" && (

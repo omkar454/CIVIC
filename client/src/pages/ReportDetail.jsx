@@ -653,13 +653,19 @@ const generateQRCode = async () => {
           )}
         </div>
 
-        {canVote && (
-          <Button
-            onClick={voteReport}
-            className="bg-blue-600 hover:bg-blue-700 text-white mt-2"
-          >
-            Upvote ({report.votes || 0})
-          </Button>
+        {role === "citizen" && !isReporter && ["Acknowledged", "In Progress"].includes(report.status) && (
+          report.voters?.includes(userId) ? (
+            <Badge className="bg-green-100 text-green-700 border-green-200 mt-2 py-2 px-4 text-sm font-bold w-fit">
+              Already Voted ✅
+            </Badge>
+          ) : (
+            <Button
+              onClick={voteReport}
+              className="bg-blue-600 hover:bg-blue-700 text-white mt-2"
+            >
+              Upvote ({report.votes || 0})
+            </Button>
+          )
         )}
         {!canVote && role === "citizen" && (
           <p className="text-gray-500 mt-2">

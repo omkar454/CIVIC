@@ -688,11 +688,8 @@ router.get("/officer/:id", auth("admin"), async (req, res) => {
     const allReports = [...reports, ...textReports];
 
     const processed = allReports.map((r, index) => {
-      // Determine SLA days based on priority score
-      let slaDays = 5;
-      if (r.priorityScore > 30) slaDays = 2;
-      else if (r.priorityScore > 20) slaDays = 3;
-      else if (r.priorityScore > 10) slaDays = 4;
+      // Use database-calculated SLA days (driven by Smart Priority AI)
+      const slaDays = r.slaDays || 7;
 
       // Detect reference date (transfer → reinitialize SLA)
       const baseDate = r.transferApprovedAt
