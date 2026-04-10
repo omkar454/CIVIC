@@ -188,6 +188,16 @@ const ReportSchema = new mongoose.Schema(
     isAIVerified: { type: Boolean, default: false },
     textEmbedding: { type: [Number], default: [] },
     imageEmbedding: { type: [Number], default: [] },
+
+    // 🔹 AI Predictive Fields (Module 3)
+    smartPriorityScore: { type: Number, default: 0 },
+    predictedETA: { type: Date, default: null },
+    priorityFactors: [{ type: String }],
+    isRaining: { type: Boolean, default: null },
+    areaDensity: { type: Number, default: null },
+    populationDensity: { type: Number, default: null },
+    nearestLandmark: { type: String, default: null },
+    densityScore: { type: Number, default: null }, // Legacy support
   },
   { timestamps: true }
 );

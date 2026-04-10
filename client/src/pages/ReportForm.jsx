@@ -516,29 +516,55 @@ export default function ReportForm() {
             )}
 
             {/* Selected Lat & Long */}
-            {position && locationOption === "map" && (
-              <div className="mt-2 p-2 border rounded border-blue-200 bg-blue-50 dark:bg-blue-900/20">
-                 <p className="text-sm font-semibold text-blue-700 dark:text-blue-400">
-                  📍 Map Selection Location:
-                </p>
-                <p className="text-sm text-gray-600 dark:text-gray-300">
-                  Lat: {position[0].toFixed(6)}, Lng: {position[1].toFixed(6)}
-                </p>
-                <p className="text-sm text-gray-700 dark:text-gray-300 truncate">
-                  Address: {mapAddress || "Select a point on the map..."}
-                </p>
-              </div>
-            )}
+            {position && (locationOption === "map" || locationOption === "live") && (
+              <div className="mt-2 p-3 border rounded-xl border-blue-200 bg-blue-50/50 dark:bg-blue-900/10 space-y-3">
+                 <div className="flex items-center justify-between">
+                    <p className="text-sm font-bold text-blue-700 dark:text-blue-400 flex items-center gap-2">
+                      📍 Precise Coordinates
+                    </p>
+                    <button 
+                      type="button"
+                      onClick={async () => {
+                        setMapAddress("Syncing address...");
+                        const addr = await fetchAddress(position[0], position[1]);
+                        setMapAddress(addr);
+                        if(locationOption === "live") setLiveAddress(addr);
+                      }}
+                      className="text-[10px] font-bold uppercase tracking-wider bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-700 transition"
+                    >
+                      Sync Address 🔄
+                    </button>
+                 </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase">Latitude</label>
+                    <input 
+                      type="number" 
+                      step="any"
+                      value={position[0]} 
+                      onChange={(e) => setPosition([parseFloat(e.target.value) || 0, position[1]])}
+                      className="w-full text-sm font-mono p-1.5 bg-white dark:bg-gray-800 border rounded border-blue-100 dark:border-gray-700 focus:ring-2 focus:ring-blue-400 outline-none"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 uppercase">Longitude</label>
+                    <input 
+                      type="number" 
+                      step="any"
+                      value={position[1]} 
+                      onChange={(e) => setPosition([position[0], parseFloat(e.target.value) || 0])}
+                      className="w-full text-sm font-mono p-1.5 bg-white dark:bg-gray-800 border rounded border-blue-100 dark:border-gray-700 focus:ring-2 focus:ring-blue-400 outline-none"
+                    />
+                  </div>
+                </div>
 
-            {/* Live Location display */}
-            {locationOption === "live" && position && (
-              <div className="p-2 border rounded mt-1">
-                <p className="text-sm text-gray-700 dark:text-gray-300">
-                  Lat: {position[0].toFixed(6)}, Lng: {position[1].toFixed(6)}
-                </p>
-                <p className="text-sm text-gray-700 dark:text-gray-300">
-                  Address: {liveAddress || "Fetching address..."}
-                </p>
+                <div className="pt-2 border-t border-blue-100 dark:border-gray-700">
+                  <p className="text-[10px] font-black text-gray-400 uppercase mb-1">Detected Area</p>
+                  <p className="text-xs text-gray-700 dark:text-gray-300 line-clamp-2 italic">
+                    {locationOption === "live" ? liveAddress : mapAddress || "Select a point or sync address..."}
+                  </p>
+                </div>
               </div>
             )}
 

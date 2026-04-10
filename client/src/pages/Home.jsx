@@ -68,6 +68,14 @@ const STATUS_COLORS = {
   Rejected: "#6B7280",
 };
 
+// Priority score color helper
+const getPriorityColor = (score) => {
+  if (score >= 90) return "text-red-600";
+  if (score >= 65) return "text-orange-500";
+  if (score >= 35) return "text-yellow-500";
+  return "text-green-500";
+};
+
 export default function Home() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -573,7 +581,14 @@ useEffect(() => {
                           <h4 className="font-bold text-gray-900 dark:text-gray-100 text-sm line-clamp-1 group-hover:text-purple-600 mb-1">{r.title}</h4>
                           <div className="flex items-center justify-between text-[10px]">
                             <span className="text-gray-500 font-bold uppercase">{r.category}</span>
-                            <span className="text-purple-700 dark:text-purple-300 font-black">ACTIVE</span>
+                            <div className="flex items-center gap-2">
+                              {r.smartPriorityScore !== undefined && (
+                                <span className={`font-black ${getPriorityColor(r.smartPriorityScore)}`}>
+                                  ⭐ {r.smartPriorityScore.toFixed(0)}
+                                </span>
+                              )}
+                              <span className="text-purple-700 dark:text-purple-300 font-black">ACTIVE</span>
+                            </div>
                           </div>
                         </Link>
                       </li>
@@ -605,7 +620,14 @@ useEffect(() => {
                       <li key={r._id} className="group">
                         <Link to={`/reports/${r._id}`} className="block p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-amber-50 dark:hover:bg-amber-900/20 border border-transparent hover:border-amber-200 transition-all">
                           <h4 className="font-bold text-gray-900 dark:text-gray-100 text-sm line-clamp-1 group-hover:text-amber-600 mb-1">{r.title}</h4>
-                          <p className="text-[10px] text-amber-700 font-bold uppercase tracking-tighter">AI Skipped: Awaiting Admin</p>
+                          <div className="flex items-center justify-between">
+                            <p className="text-[10px] text-amber-700 font-bold uppercase tracking-tighter">AI Skipped: Awaiting Admin</p>
+                            {r.smartPriorityScore !== undefined && (
+                              <span className={`text-[10px] font-black ${getPriorityColor(r.smartPriorityScore)}`}>
+                                ⭐ {r.smartPriorityScore.toFixed(0)}
+                              </span>
+                            )}
+                          </div>
                         </Link>
                       </li>
                     ))}
@@ -635,7 +657,14 @@ useEffect(() => {
                       <li key={r._id} className="group">
                         <Link to={`/reports/${r._id}`} className="block p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-900/20 border border-transparent hover:border-emerald-200 transition-all">
                           <h4 className="font-bold text-gray-900 dark:text-gray-100 text-sm line-clamp-1 group-hover:text-emerald-600 mb-1">{r.title}</h4>
-                          <p className="text-[10px] text-gray-500 italic">Resolved on {new Date(r.updatedAt).toLocaleDateString()}</p>
+                          <div className="flex items-center justify-between">
+                            <p className="text-[10px] text-gray-500 italic">Resolved on {new Date(r.updatedAt).toLocaleDateString()}</p>
+                            {r.smartPriorityScore !== undefined && (
+                              <span className={`text-[10px] font-black ${getPriorityColor(r.smartPriorityScore)}`}>
+                                ⭐ {r.smartPriorityScore.toFixed(0)}
+                              </span>
+                            )}
+                          </div>
                         </Link>
                       </li>
                     ))}
@@ -665,9 +694,16 @@ useEffect(() => {
                       <li key={r._id} className="group">
                         <Link to={`/reports/${r._id}`} className="block p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/10 border border-transparent hover:border-red-100 transition-all">
                           <h4 className="font-bold text-gray-800 dark:text-gray-200 text-sm line-clamp-1 mb-1">{r.title}</h4>
-                          <span className="text-[9px] bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 px-1.5 py-0.5 rounded font-black tracking-widest uppercase">
-                            {r.status === "Rejected" ? "Officer Rejected" : "AI/Admin Rejected"}
-                          </span>
+                          <div className="flex items-center justify-between">
+                            <span className="text-[9px] bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 px-1.5 py-0.5 rounded font-black tracking-widest uppercase">
+                              {r.status === "Rejected" ? "Officer Rejected" : "AI/Admin Rejected"}
+                            </span>
+                            {r.smartPriorityScore !== undefined && (
+                              <span className={`text-[10px] font-black ${getPriorityColor(r.smartPriorityScore)}`}>
+                                ⭐ {r.smartPriorityScore.toFixed(0)}
+                              </span>
+                            )}
+                          </div>
                         </Link>
                       </li>
                     ))}
@@ -705,7 +741,14 @@ useEffect(() => {
                           <h4 className="font-bold text-gray-900 dark:text-gray-100 text-sm line-clamp-1 group-hover:text-blue-600 mb-1">{r.title}</h4>
                           <div className="flex items-center justify-between text-[10px]">
                             <span className="text-gray-500 uppercase font-black">{r.category}</span>
-                            <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">{r.status}</span>
+                            <div className="flex items-center gap-2">
+                              {r.smartPriorityScore !== undefined && (
+                                <span className={`font-black ${getPriorityColor(r.smartPriorityScore)}`}>
+                                  AI: {r.smartPriorityScore.toFixed(0)}
+                                </span>
+                              )}
+                              <span className="bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">{r.status}</span>
+                            </div>
                           </div>
                         </Link>
                       </li>
@@ -736,9 +779,16 @@ useEffect(() => {
                       <li key={r._id} className="group">
                         <Link to={`/reports/${r._id}`} className="block p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-amber-50 dark:hover:bg-amber-900/20 border border-transparent hover:border-amber-200 transition-all">
                           <h4 className="font-bold text-gray-900 dark:text-gray-100 text-sm line-clamp-1 group-hover:text-amber-600 mb-1">{r.title}</h4>
-                          <div className="flex items-center gap-2 text-[10px]">
-                            <span className="text-gray-500 uppercase font-black">Proposed:</span>
-                            <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">{r.pendingStatus}</span>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-[10px]">
+                              <span className="text-gray-500 uppercase font-black">Proposed:</span>
+                              <span className="bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold uppercase tracking-widest">{r.pendingStatus}</span>
+                            </div>
+                            {r.smartPriorityScore !== undefined && (
+                              <span className={`text-[10px] font-black ${getPriorityColor(r.smartPriorityScore)}`}>
+                                AI: {r.smartPriorityScore.toFixed(0)}
+                              </span>
+                            )}
                           </div>
                         </Link>
                       </li>
@@ -800,8 +850,12 @@ useEffect(() => {
                         <Link to={`/reports/${r._id}`} className="block p-3 bg-red-50 dark:bg-red-900/20 rounded-xl border border-transparent hover:border-red-200 transition-all">
                           <h4 className="font-bold text-red-900 dark:text-red-100 text-sm line-clamp-1 mb-1">{r.title}</h4>
                           <div className="flex items-center justify-between text-[10px]">
-                            <span className="text-red-700 dark:text-red-300 font-black uppercase">CRITICAL SLA</span>
-                            <span className="text-red-600">{r.status}</span>
+                            <span className="bg-red-200 text-red-800 px-1.5 py-0.5 rounded font-black uppercase tracking-widest">🚨 OVERDUE BREACH</span>
+                            {r.smartPriorityScore !== undefined && (
+                              <span className={`font-black ${getPriorityColor(r.smartPriorityScore)}`}>
+                                AI: {r.smartPriorityScore.toFixed(0)}
+                              </span>
+                            )}
                           </div>
                         </Link>
                       </li>

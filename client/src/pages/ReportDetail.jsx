@@ -140,6 +140,96 @@ function SLASection({ report }) {
   );
 }
 
+function SmartPriorityDisplay({ report }) {
+  if (!report.smartPriorityScore) return null;
+
+  const score = report.smartPriorityScore;
+  let colorClass = "text-green-600 dark:text-green-400";
+  let bgClass = "bg-green-50 dark:bg-green-900/20";
+  let label = "Normal";
+
+  if (score >= 90) {
+    colorClass = "text-red-600 dark:text-red-400";
+    bgClass = "bg-red-50 dark:bg-red-900/40";
+    label = "Extreme / Critical";
+  } else if (score >= 65) {
+    colorClass = "text-orange-600 dark:text-orange-400";
+    bgClass = "bg-orange-50 dark:bg-orange-900/20";
+    label = "High Priority";
+  } else if (score >= 35) {
+    colorClass = "text-yellow-600 dark:text-yellow-400";
+    bgClass = "bg-yellow-50 dark:bg-yellow-900/20";
+    label = "Medium";
+  }
+
+  return (
+    <div className={`shadow-lg rounded-xl p-4 space-y-3 border border-gray-100 dark:border-gray-700 ${bgClass}`}>
+      <div className="flex items-center justify-between">
+        <h3 className="text-lg font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
+          AI Smart Priority 🧠
+        </h3>
+        <Badge className={`${colorClass} bg-white dark:bg-gray-800 border-current font-bold`}>
+          {label}
+        </Badge>
+      </div>
+
+      <div className="flex items-end gap-2">
+        <span className={`text-5xl font-black ${colorClass}`}>{score.toFixed(0)}</span>
+        <span className="text-sm text-gray-500 mb-2 font-medium">/ 100</span>
+      </div>
+
+      {report.priorityFactors && report.priorityFactors.length > 0 && (
+        <div className="space-y-2 pt-2 border-t border-gray-200/50">
+          <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Priority Drivers</p>
+          <div className="flex flex-wrap gap-1">
+            {report.priorityFactors.map((f, i) => (
+              <Badge key={i} variant="outline" className="text-[10px] py-0 px-2 bg-white/50 dark:bg-black/20 font-medium">
+                {f}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {report.predictedETA && (
+        <div className="pt-2 border-t border-gray-200/50">
+           <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Projected Resolution</p>
+           <p className="text-sm font-bold text-gray-800 dark:text-gray-200">
+             📅 {new Date(report.predictedETA).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+           </p>
+        </div>
+      )}
+
+      {/* 🧠 AI Brain Logs (Module 3) */}
+      <div className="pt-2 border-t border-gray-200/50">
+        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-1">AI Context Analysis</p>
+        <div className="flex flex-wrap gap-2">
+          {report.isRaining !== null && (
+            <div className={`text-[10px] font-bold flex items-center gap-1 px-2 py-0.5 rounded-full ${report.isRaining ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-500"}`}>
+              {report.isRaining ? "🌧️ Active Rain Detected" : "☀️ Clear Weather"}
+            </div>
+          )}
+          {report.areaDensity !== null && (
+            <div className="text-[10px] font-bold flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+              🏢 Infrastructure: {(report.areaDensity * 100).toFixed(0)}%
+            </div>
+          )}
+          {report.populationDensity !== null && (
+            <div className="text-[10px] font-bold flex items-center gap-1 px-2 py-0.5 rounded-full bg-orange-100 text-orange-700">
+              👥 Population: {report.populationDensity.toLocaleString()}
+            </div>
+          )}
+          {report.nearestLandmark && (
+            <div className="text-[10px] font-bold flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 border border-red-200 animate-pulse">
+              📍 Near {report.nearestLandmark}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ReportDetail() {
   const navigate = useNavigate();
   const { id } = useParams();
@@ -426,6 +516,7 @@ const generateQRCode = async () => {
 
   return (
     <div className="max-w-5xl mx-auto p-4 space-y-6">
+
       {/* 🚀 DUPLICATE REDIRECT BANNER 🚀 */}
       {fromDuplicate && (
         <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-2xl p-6 shadow-xl border border-blue-400/30 mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
@@ -719,8 +810,14 @@ const generateQRCode = async () => {
           </p>
         </div>
       )}
-      {/* ---------------- SLA Countdown Section ---------------- */}
-      {report.slaDays && report.slaStartDate && <SLASection report={report} />}
+
+      {/* 🧠 Module 3: Intelligence Widgets (Moved Below Map) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {report.slaDays && report.slaStartDate && <SLASection report={report} />}
+        {report.smartPriorityScore !== undefined && report.smartPriorityScore !== null && (
+          <SmartPriorityDisplay report={report} />
+        )}
+      </div>
 
       {/* ---------------- Officer Status Controls ---------------- */}
       {canUpdateStatus ? (

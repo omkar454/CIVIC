@@ -1,5 +1,6 @@
 // routes/adminVerification.js
 import express from "express";
+import axios from "axios";
 import mongoose from "mongoose";
 import Report from "../models/Report.js";
 import TextAddressReport from "../models/TextAddressReport.js";
@@ -9,6 +10,70 @@ import auth from "../middleware/auth.js";
 import fetch from "node-fetch";
 
 const router = express.Router();
+
+/**
+ * 🧠 Module 3: Predictive Analytics Helper
+ * Calls the Python microservice to get Smart Priority & ETA.
+ */
+async function calculateSmartPriority(report) {
+  try {
+    const lng = report.location?.coordinates?.[0];
+    const lat = report.location?.coordinates?.[1];
+
+    if (!lat || !lng) return;
+
+    // 📍 PROXIMITY CACHE: Check for a nearby report with existing density data (100m)
+    const cachedReport = await Report.findOne({
+      location: {
+        $near: {
+          $geometry: { type: "Point", coordinates: [lng, lat] },
+          $maxDistance: 100, // 100 meters
+        },
+      },
+      areaDensity: { $ne: null },
+      populationDensity: { $ne: null },
+    });
+
+    let cacheData = {};
+    if (cachedReport) {
+      console.log(`♻️ Reusing proximity cache from nearby report ${cachedReport._id}`);
+      cacheData = {
+        areaDensity: cachedReport.areaDensity,
+        populationDensity: cachedReport.populationDensity,
+        nearestLandmark: cachedReport.nearestLandmark,
+      };
+    }
+
+    const payload = {
+      lat: Number(lat),
+      lng: Number(lng),
+      severity: Number(report.severity) || 3,
+      votes: Number(report.votes) || 0,
+      category: report.category || "other",
+    };
+
+    const response = await axios.post("http://localhost:8001/api/predict/priority", payload);
+
+    if (response.data) {
+      report.smartPriorityScore = response.data.smartPriorityScore;
+      report.predictedETA = new Date(response.data.predictedETA);
+      report.priorityFactors = response.data.priorityFactors;
+      report.isRaining = response.data.isRaining;
+      
+      // Use cached data if available, otherwise use API response
+      report.areaDensity = cacheData.areaDensity ?? response.data.areaDensity;
+      report.populationDensity = cacheData.populationDensity ?? response.data.populationDensity;
+      report.nearestLandmark = cacheData.nearestLandmark ?? response.data.nearestLandmark;
+      
+      report.densityScore = report.areaDensity; // Legacy support
+      
+      await report.save();
+      console.log(`✅ Smart Priority calculated for ${report._id}: ${report.smartPriorityScore}`);
+    }
+  } catch (error) {
+    console.warn("❌ Smart Priority AI Error:", error.message);
+  }
+}
 
 /* ------------------------------------------------------------------
    🧩 Helper: Simplified notification creator
@@ -112,6 +177,9 @@ router.post("/:id/verify", auth("admin"), async (req, res) => {
         at: new Date(),
       });
 
+      // 🧠 Calculate AI Smart Priority for Primary Task
+      calculateSmartPriority(report);
+
       // 2. Process Additional Categories (Clone Reports)
       const splitReports = [];
       if (categories.length > 1) {
@@ -146,6 +214,9 @@ router.post("/:id/verify", auth("admin"), async (req, res) => {
 
           await newReport.save();
           splitReports.push(newReport);
+
+          // 🧠 Calculate AI Smart Priority for Split Task
+          calculateSmartPriority(newReport);
 
           // Notify Officers for the Cloned Report
           const officers = await User.find({ role: "officer", department: newReport.department }).select("_id");
@@ -247,6 +318,9 @@ router.get("/pending", auth("admin"), async (req, res) => {
       address: r.address || "",
       isTextReport: true,
     }));
+
+    // 3️⃣ Combine both types
+    const allReports = [...geoReportsWithAddress, ...textReportsProcessed];
 
     // 4️⃣ Sort & Extract Pending Proofs for UI
     allReports.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));

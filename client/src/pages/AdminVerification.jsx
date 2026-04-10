@@ -333,6 +333,41 @@ export default function AdminVerification() {
                   </div>
                 </div>
 
+                {/* 🧠 SMART PRIORITY INSIGHTS (Module 3) 🧠 */}
+                {report.smartPriorityScore && (
+                  <div className="md:col-span-2 p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-lg border border-indigo-100 dark:border-indigo-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex flex-col">
+                      <span className="text-xs font-bold text-indigo-700 dark:text-indigo-400 uppercase tracking-wider">AI Smart Priority Suggestion</span>
+                      <div className="flex items-end gap-1">
+                        <span className="text-3xl font-black text-indigo-800 dark:text-indigo-300">
+                          {report.smartPriorityScore.toFixed(0)}
+                        </span>
+                        <span className="text-xs text-indigo-500 mb-1">/ 100</span>
+                      </div>
+                    </div>
+
+                    <div className="flex-1">
+                      <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest block mb-1">Key Drivers</span>
+                      <div className="flex flex-wrap gap-1">
+                        {(report.priorityFactors || []).map((factor, idx) => (
+                          <Badge key={idx} variant="outline" className="text-[10px] bg-white/50 dark:bg-black/20 text-indigo-700 dark:text-indigo-300 border-indigo-200">
+                            {factor}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+
+                    {report.predictedETA && (
+                      <div className="text-right">
+                        <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest block mb-1">AI-ETA</span>
+                        <span className="text-xs font-bold text-indigo-800 dark:text-indigo-200">
+                          📅 {new Date(report.predictedETA).toLocaleDateString()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* AI Consensus Breakdown (Added for Admin Clarity) */}
                 {report.status === "Pending AI Review" && (
                   <div className="md:col-span-2 mt-2 p-3 bg-white dark:bg-gray-800 rounded-lg border border-orange-100 dark:border-orange-900/30">

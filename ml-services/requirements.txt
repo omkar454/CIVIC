@@ -13,3 +13,7 @@ python-dotenv
 opencv-python 
 numpy 
 Pillow
+pandas
+joblib
+xgboost
+overpy
