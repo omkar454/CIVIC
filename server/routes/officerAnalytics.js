@@ -1,6 +1,7 @@
 // routes/officerAnalytics.js
 import express from "express";
 import auth from "../middleware/auth.js";
+import User from "../models/User.js";
 import Report from "../models/Report.js";
 import TextAddressReport from "../models/TextAddressReport.js";
 
@@ -206,6 +207,84 @@ router.get("/performance-summary", auth("officer"), async (req, res) => {
     res
       .status(500)
       .json({ message: "Failed to fetch officer performance summary" });
+  }
+});
+
+/* ------------------------------------------------------------------
+   4️⃣ Individual Stats (Officer)
+-------------------------------------------------------------------*/
+router.get("/individual-stats", auth("officer"), async (req, res) => {
+  try {
+    const officerId = req.user._id;
+    const department = req.user.department;
+
+    if (!department) {
+       return res.json({ complianceRate: 100, departmentRank: "Top 1%", totalResolved: 0 });
+    }
+
+    // 1. Get all officers in this department
+    const officers = await User.find({ role: "officer", department });
+    
+    // 2. Calculate performance for EACH officer to determine ranking
+    const officerStatsPromises = officers.map(async (off) => {
+      const [resolvedNormal, resolvedText, overdueNormal, overdueText] = await Promise.all([
+        Report.find({ assignedTo: off._id, status: "Resolved" }),
+        TextAddressReport.find({ assignedTo: off._id, status: "Resolved" }),
+        Report.find({ assignedTo: off._id, status: { $ne: "Resolved" }, slaStatus: "Overdue" }),
+        TextAddressReport.find({ assignedTo: off._id, status: { $ne: "Resolved" }, slaStatus: "Overdue" }),
+      ]);
+      
+      const resolved = [...resolvedNormal, ...resolvedText];
+      const overdueOpen = [...overdueNormal, ...overdueText];
+
+      const totalRelevant = resolved.length + overdueOpen.length;
+      
+      if (totalRelevant === 0) {
+        return { 
+          id: off._id.toString(), 
+          rate: 100, 
+          count: 0 
+        };
+      }
+      
+      const onTimeResolved = resolved.filter(r => r.slaStatus === "On Time").length;
+      // Compliance = (Resolved On Time) / (Total Resolved + Open Overdue)
+      const rate = (onTimeResolved / totalRelevant) * 100;
+
+      return { 
+        id: off._id.toString(), 
+        rate: rate, 
+        count: resolved.length
+      };
+    });
+
+    const allStats = await Promise.all(officerStatsPromises);
+    
+    const currentOfficerStats = allStats.find(s => s.id === officerId.toString()) || { rate: 100, count: 0 };
+    const myRate = currentOfficerStats.rate;
+    const myCount = currentOfficerStats.count;
+
+    // Competition Ranking: count how many officers are strictly better
+    // Better = higher rate OR (same rate AND higher count as tie-breaker)
+    const countBetter = allStats.filter(s => 
+      s.rate > myRate || (s.rate === myRate && s.count > myCount)
+    ).length;
+    
+    const sharedRank = countBetter + 1;
+    const totalOfficers = allStats.length;
+    const rankPercentile = Math.ceil((sharedRank / totalOfficers) * 100);
+
+    res.json({
+      complianceRate: Math.round(myRate),
+      departmentRank: sharedRank === 1 ? "Rank #1" : `Top ${rankPercentile}%`,
+      totalResolved: myCount,
+      departmentSize: totalOfficers,
+      isTied: allStats.filter(s => s.rate === myRate && s.count === myCount).length > 1
+    });
+
+  } catch (err) {
+    console.error("❌ Individual stats error:", err);
+    res.status(500).json({ message: "Failed to fetch individual performance stats" });
   }
 });
 

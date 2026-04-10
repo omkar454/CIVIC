@@ -11,6 +11,7 @@ import OfficerAnalytics from "../components/OfficerAnalytics.jsx";
 import CitizenAnalytics from "../components/CitizenAnalytics.jsx";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
+import AccountHealth from "../components/AccountHealth.jsx";
 
 // Recharts
 import {
@@ -351,12 +352,12 @@ useEffect(() => {
           ⚠️ You have <strong>{userData.warnings}</strong> warning
           {userData.warnings > 1 ? "s" : ""}. After 3 warnings, your account
           will be blocked automatically.
-          {userData.warningLogs?.length > 0 && (
+          {userData.abuseLogs?.length > 0 && (
             <ul className="list-disc pl-6 mt-2 text-sm text-yellow-700 dark:text-yellow-200">
-              {userData.warningLogs.map((w) => (
-                <li key={w._id}>
-                  {new Date(w.date).toLocaleDateString()}: Reason by admin:{" "}
-                  {w.reason}
+              {userData.abuseLogs.filter(log => log.isHardStrike).map((log, i) => (
+                <li key={i}>
+                  <strong>{new Date(log.date).toLocaleDateString()}:</strong>{" "}
+                  <span className="font-bold">[{log.admin ? "👤 BMC ADMIN" : "🤖 BMC AI"}]</span> - {log.reason}
                 </li>
               ))}
             </ul>
@@ -557,6 +558,9 @@ useEffect(() => {
       {/* Citizens Dashboard Overhaul */}
       {role === "citizen" && (
         <div className="space-y-8">
+          {/* 🛡️ Account Health & Moderation Log */}
+          <AccountHealth userData={userData} />
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {/* Box 1: AI & Admin Verified */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border-t-4 border-purple-500 p-5 flex flex-col h-[400px]">

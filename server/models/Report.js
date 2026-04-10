@@ -162,6 +162,7 @@ const ReportSchema = new mongoose.Schema(
     slaDays: { type: Number, default: null }, // Calculated from priority
     slaStartDate: { type: Date, default: null }, // Starts when assigned/acknowledged
     slaEndDate: { type: Date, default: null }, // When resolved/rejected
+    slaBreachLogged: { type: Boolean, default: false }, // ✅ Prevent duplicate audit logs
     slaStatus: {
       type: String,
       enum: ["Pending", "On Time", "Overdue", null],

@@ -27,41 +27,23 @@ router.post("/warn/:userId", auth("admin"), async (req, res) => {
     if (!reason?.trim())
       return res.status(400).json({ message: "Reason is required" });
 
-    const user = await User.findById(req.params.userId);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    // Use unified auto-moderation logic
+    const moderation = await User.autoWarn(
+      req.params.userId,
+      reason.trim(),
+      "Admin Manual",
+      req.user._id
+    );
 
-    user.warnings = (user.warnings || 0) + 1;
-    user.warningLogs.push({
-      reason: reason.trim(),
-      admin: req.user._id,
-      date: new Date(),
-    });
-
-    if (user.warnings >= 3 && !user.blocked) {
-      user.blocked = true;
-      user.blockedLogs.push({
-        reason: `User automatically blocked after receiving 3 warnings. Last warning reason: "${reason.trim()}".`,
-        date: new Date(),
-        admin: req.user._id,
-      });
-    }
-
-    await user.save();
-
-    // 🔔 Notify user
-    const noteMsg = user.blocked
-      ? `You have been warned and automatically blocked after 3 warnings. Reason: ${reason.trim()}`
-      : `You have received a warning from admin. Reason: ${reason.trim()}`;
-    await createNotification(user._id, noteMsg);
+    if (!moderation) return res.status(404).json({ message: "User not found" });
 
     res.json({
-      message: user.blocked
-        ? "User warned and auto-blocked after 3 warnings"
-        : "User warned successfully",
-      warnings: user.warnings,
-      blocked: user.blocked,
-      warningLogs: user.warningLogs,
-      blockedLogs: user.blockedLogs,
+      message: moderation.blocked
+        ? "User warned and auto-blocked after final moderation strike"
+        : "User issued a moderation strike successfully",
+      warnings: moderation.warnings,
+      blocked: moderation.blocked,
+      abuseAttempts: moderation.attempts
     });
   } catch (err) {
     console.error("Warn user error:", err);
@@ -117,14 +99,17 @@ router.post("/block/:userId", auth("admin"), async (req, res) => {
 router.get("/users", auth("admin"), async (req, res) => {
   const pageNum = parseInt(req.query.page, 10) || 1;
   const limitNum = parseInt(req.query.limit, 10) || 10;
+  const { role } = req.query;
 
   try {
-    const users = await User.find()
+    const filter = role ? { role } : {};
+    
+    const users = await User.find(filter)
       .select("-passwordHash")
       .skip((pageNum - 1) * limitNum)
       .limit(limitNum);
 
-    const total = await User.countDocuments();
+    const total = await User.countDocuments(filter);
 
     res.json({
       total,

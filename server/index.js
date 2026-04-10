@@ -20,6 +20,8 @@ import officerAnalyticsRoutes from "./routes/officerAnalytics.js";
 import citizenRoutes from "./routes/citizenAnalytics.js";
 import qrCodeRoutes from "./routes/qrCode.js";
 import chatBotRoute from "./routes/chatBot.js"
+import officerChatRoutes from "./routes/officerChat.js";
+import { runSLACheck } from "./utils/slaEngine.js"; // ✅ Import SLA Engine
 
 dotenv.config({ path: "./.env" });
 
@@ -49,7 +51,8 @@ app.use("/api/vision", visionRoutes); // ✅ Vision Engine API
 app.use("/api/officer", officerAnalyticsRoutes);
 app.use("/api/citizen", citizenRoutes);
 app.use("/api/qr", qrCodeRoutes);
-app.use("/api/chat", chatBotRoute)
+app.use("/api/chat", chatBotRoute);
+app.use("/api/officer-chat", officerChatRoutes);
 
 // Health check
 app.get("/", (req, res) => res.json({ message: "Server is working 🚀" }));
@@ -63,6 +66,11 @@ mongoose
   .connect(process.env.MONGO_URI)
   .then(() => {
     console.log("✅ MongoDB connected");
+    // 🕒 Run Startup SLA Audit
+    runSLACheck().then(count => {
+      if (count > 0) console.log(`📋 Startup Audit: ${count} New SLA breaches identified and logged.`);
+      else console.log("✅ Startup Audit: No new SLA breaches.");
+    });
     app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
   })
   .catch((err) => {

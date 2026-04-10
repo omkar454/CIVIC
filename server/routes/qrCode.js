@@ -100,26 +100,26 @@ router.get("/:type/:id/data", async (req, res) => {
               : "N/A"
           }</p>
           <p><span class="label">Votes:</span> ${report.votes}</p>
-          <p><span class="label">Priority Score:</span> ${
-            report.priorityScore
-          }</p>
           <p><span class="label">Description:</span> ${
             report.description || "N/A"
           }</p>
           ${
             renderMedia(report.media)
-              ? `<p><span class="label">Media:</span><br>${renderMedia(
+              ? `<p><span class="label">Initial Evidence Media:</span><br>${renderMedia(
                   report.media
                 )}</p>`
               : ""
           }
-          ${
-            renderMedia(report.officerProofMedia)
-              ? `<p><span class="label">Officer Proof Media:</span><br>${renderMedia(
-                  report.officerProofMedia
-                )}</p>`
-              : ""
-          }
+        </div>
+
+        <div class="section">
+          <h2>AI Intelligence & SLA Metadata</h2>
+          <p><span class="label">Photo Authenticity:</span> ${report.isImageAuthentic === true ? '<span style="color:green;">Valid Real Image</span>' : report.isImageAuthentic === false ? '<span style="color:red;">Flagged (Potential Fraud)</span>' : 'Pending / NA'}</p>
+          <p><span class="label">Auto-Verified (Zero-Touch):</span> ${report.isAIVerified ? 'Yes' : 'No'}</p>
+          ${report.imageCategory ? `<p><span class="label">Predicted Category:</span> ${report.imageCategory}</p>` : ''}
+          ${report.similarityScore ? `<p><span class="label">Siamese Verification Confidence:</span> ${(report.similarityScore * 100).toFixed(1)}%</p>` : ''}
+          ${report.officerValidationPass === true ? `<p><span class="label">YOLO Audit Pass:</span> Yes / Issue Removed</p>` : report.officerValidationPass === false ? `<p><span class="label">YOLO Audit Pass:</span> Failed / Incomplete</p>` : ''}
+          ${report.smartPriorityScore ? `<p><span class="label">Predictive Priority Score:</span> ${report.smartPriorityScore}</p>` : ''}
         </div>
 
         <div class="section">

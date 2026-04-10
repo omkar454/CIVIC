@@ -198,6 +198,10 @@ router.post("/:id/verify", auth("admin"), async (req, res) => {
             category: extraCat,
             department: categoryToDept[extraCat] || "general",
             status: "Acknowledged",
+            slaStartDate: new Date(),
+            slaDays: Number(severity) >= 4 ? 2 : (Number(severity) >= 3 ? 4 : 7),
+            slaStatus: "Pending",
+            priorityScore: Number(severity) * 10 + (clonedData.votes || 0) * 5,
             statusHistory: [{
               status: "Acknowledged",
               by: req.user._id,
@@ -278,12 +282,12 @@ router.post("/:id/verify", auth("admin"), async (req, res) => {
 -------------------------------------------------------------------*/
 router.get("/pending", auth("admin"), async (req, res) => {
   try {
-    // 1️⃣ Geo reports
+    // 1️⃣ Geo reports - ONLY "Open" status reports submitted by citizens
     const geoReports = await Report.find({
+      status: "Open",
       $or: [
         { "citizenAdminVerification.verified": null },
         { citizenAdminVerification: { $exists: false } },
-        { pendingStatus: { $in: ["Resolved", "Rejected"] } },
       ],
     })
       .populate("reporter", "name email role")
@@ -299,12 +303,12 @@ router.get("/pending", auth("admin"), async (req, res) => {
       return r;
     });
 
-    // 2️⃣ Text/manual reports
+    // 2️⃣ Text/manual reports - ONLY "Open" status reports
     const textReports = await TextAddressReport.find({
+      status: "Open",
       $or: [
         { "citizenAdminVerification.verified": null },
         { citizenAdminVerification: { $exists: false } },
-        { pendingStatus: { $in: ["Resolved", "Rejected"] } },
       ],
     })
       .populate("reporter", "name email role")

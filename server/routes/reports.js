@@ -4,6 +4,7 @@ import axios from "axios";
 import Report from "../models/Report.js";
 import TextAddressReport from "../models/TextAddressReport.js"; // ✅ New model
 import User from "../models/User.js";
+import { runSLACheck } from "../utils/slaEngine.js"; // ✅ Import SLA Engine
 import Notification from "../models/Notification.js";
 import auth from "../middleware/auth.js";
 import TransferLog from "../models/TransferLog.js";
@@ -120,74 +121,16 @@ function calculatePriority(severity, votes) {
 
 router.get("/check-sla", auth("admin"), async (req, res) => {
   try {
-    const now = new Date();
-
-    // Only active reports (skip resolved/rejected)
-    const activeStatuses = ["Acknowledged", "In Progress"];
-
-    // Fetch reports from both collections
-    const geoReports = await Report.find({
-      status: { $in: activeStatuses },
-      slaStatus: { $in: ["Pending", "Overdue"] }
-    }).populate("assignedTo", "name email role department");
-
-    const textReports = await TextAddressReport.find({
-      status: { $in: activeStatuses },
-      slaStatus: { $in: ["Pending", "Overdue"] }
-    }).populate("assignedTo", "name email role department");
-
-    const allReports = [...geoReports, ...textReports];
-    const escalatedReports = [];
-
-    for (const r of allReports) {
-      if (!r.slaStartDate || !r.slaDays) continue;
-
-      const deadline = new Date(r.slaStartDate);
-      deadline.setDate(deadline.getDate() + r.slaDays);
-
-      // Check SLA breach
-      if (now > deadline) {
-        r.slaStatus = "Overdue";
-        await r.save();
-
-        // Notify assigned officer
-        if (r.assignedTo) {
-          await Notification.create({
-            user: r.assignedTo._id,
-            message: `⚠️ Report "${r.title}" is overdue by ${Math.floor(
-              (now - deadline) / (1000 * 60 * 60 * 24)
-            )} day(s).`,
-          });
-        }
-
-        // Notify all admins
-        const admins = await User.find({ role: "admin" });
-        const adminNotifs = admins.map((a) => ({
-          user: a._id,
-          message: `🚨 Report "${r.title}" (Dept: ${r.department
-            }) breached SLA. Officer: ${r.assignedTo?.name || "Unassigned"}.`,
-        }));
-        await Notification.insertMany(adminNotifs);
-
-        escalatedReports.push({
-          id: r._id,
-          title: r.title,
-          department: r.department,
-          officer: r.assignedTo?.name || "Unassigned",
-          overdueBy: Math.floor((now - deadline) / (1000 * 60 * 60 * 24)),
-          slaDays: r.slaDays,
-        });
-      }
-    }
+    const { newlyLogged, escalatedReports } = await runSLACheck();
 
     return res.json({
       message: "SLA check completed successfully",
-      escalatedCount: escalatedReports.length,
-      escalatedReports,
+      escalatedCount: newlyLogged,
+      escalatedReports: escalatedReports
     });
   } catch (err) {
-    console.error("SLA check error:", err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Manual SLA check error:", err);
+    res.status(500).json({ message: "Server error during SLA audit" });
   }
 });
 
@@ -257,13 +200,45 @@ router.post("/", auth("citizen"), async (req, res) => {
         const imageSim = cosineSimilarity(imageEmbedding, n.imageEmbedding);
 
         if (textSim > 0.85 || imageSim > 0.98) {
+          const isSelfDuplicate = n.reporter.toString() === req.user.id;
+
+          if (isSelfDuplicate) {
+            // 🧠 MODERATION AUTO-WARN: Only for SELF-duplicates (Spam)
+            await User.autoWarn(
+              req.user.id, 
+              "Duplicate Report Spam: Attempted to report an issue that you have already submitted nearby.",
+              "DuplicateSpam"
+            );
+          }
+
           return res.status(409).json({
-            message: "⚠️ DUPLICATE FOUND: This issue was already reported nearby.",
+            message: isSelfDuplicate 
+              ? "❌ SPAM BLOCKED: You have already submitted this report."
+              : "⚠️ DUPLICATE FOUND: This issue was already reported nearby.",
             duplicateId: n._id,
-            matchType: imageSim > 0.98 ? "Visual Match" : "Semantic Match"
+            matchType: imageSim > 0.98 ? "Visual Match" : "Semantic Match",
+            isSelfDuplicate
           });
         }
       }
+    }
+
+    // ------------------------------------------------------------
+    // 🛡️ Trigger 1: Fake Image Strike (Citizens Only)
+    // ------------------------------------------------------------
+    const supportedAI = ["pothole", "garbage", "streetlight"];
+    if (supportedAI.includes(textCategory) && String(isImageAuthentic) === "false") {
+       const result = await User.autoWarn(
+         req.user.id, 
+         `AI Fraud Detection: Inauthentic image submitted for ${textCategory} report.`,
+         "FakeImage"
+       );
+
+       return res.status(403).json({
+         message: "❌ AI SECURITY BLOCK: Inauthentic photo detected.",
+         error: "Your account has been flagged for fraudulent activity.",
+         abuseData: result
+       });
     }
 
     // ------------------------------------------------------------
@@ -471,11 +446,11 @@ router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
         let autoFinishStatus = "";
         let aiNote = "";
 
-        if (status === "Resolved" && similarityScore >= 0.7 && officerValidationPass === true) {
+        if (status === "Resolved" && similarityScore >= 0.67 && officerValidationPass === true) {
           isAutoFinalized = true;
           autoFinishStatus = "Resolved";
           aiNote = `AI AUTO-RESOLUTION: High confidence match (${(similarityScore * 100).toFixed(1)}%) + Resolution Audit Pass.`;
-        } else if (status === "Rejected" && similarityScore >= 0.7 && (officerValidationPass === false || officerValidationPass === undefined)) {
+        } else if (status === "Rejected" && similarityScore >= 0.67 && (officerValidationPass === false || officerValidationPass === undefined)) {
           isAutoFinalized = true;
           autoFinishStatus = "Rejected";
           aiNote = `AI AUTO-REJECTION: High confidence match (${(similarityScore * 100).toFixed(1)}%) + Confirmed Non-Issue (Audit Fail/No-Issue).`;
@@ -509,6 +484,16 @@ router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
             }));
             await Notification.insertMany(notifications);
           }
+
+          // 🛡️ Log as Audit (Performance Breach)
+          await User.autoWarn(
+            user._id,
+            `Fraud Attempt: Officer tried to upload a duplicate photo for report termination.`,
+            "FRAUD_ATTEMPT",
+            null, 
+            report._id
+          );
+
           historyLogged = true;
         } else if (isMismatch) {
           // 📍 AI MISMATCH REJECTION: Officer is at wrong location. Block the update.
@@ -521,6 +506,16 @@ router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
             at: new Date(),
             autoGenerated: true
           });
+
+          // 🛡️ Log as Audit (Performance Issue)
+          await User.autoWarn(
+            user._id,
+            `Location Mismatch: Officer attempted status update from an incorrect location (${(similarityScore * 100).toFixed(1)}% match).`,
+            "LOCATION_MISMATCH",
+            null,
+            report._id
+          );
+
           historyLogged = true;
         } else if (isAutoFinalized) {
           // ✅ ZERO-TOUCH: Highly certain location match + AI/Officer agreement
@@ -557,15 +552,17 @@ router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
           .json({ message: "Invalid officer status value" });
       }
 
-      // Push status history
-      report.statusHistory.push({
-        status,
-        by: user._id,
-        actorRole: user.role,
-        note: comment || "",
-        media: formattedMedia,
-        at: new Date(),
-      });
+      // Push status history only if not already handled by AI rejection
+      if (!historyLogged) {
+        report.statusHistory.push({
+          status,
+          by: user._id,
+          actorRole: user.role,
+          note: comment || "",
+          media: formattedMedia,
+          at: new Date(),
+        });
+      }
 
       // Notify admins ONLY if manual verification is actually required (AI was uncertain)
       if (status === "Resolved" || status === "Rejected") {
@@ -668,7 +665,7 @@ router.get("/officer/:id", auth("admin"), async (req, res) => {
 
     // Fetch officer details
     const officer = await User.findById(id).select(
-      "name email department role"
+      "name email department role warnings abuseAttempts abuseLogs"
     );
     if (!officer) {
       console.warn("⚠️ Officer not found in database for ID:", id);
@@ -689,7 +686,7 @@ router.get("/officer/:id", auth("admin"), async (req, res) => {
 
     const processed = allReports.map((r, index) => {
       // Use database-calculated SLA days (driven by Smart Priority AI)
-      const slaDays = r.slaDays || 7;
+      let slaDays = r.slaDays || 7;
 
       // Detect reference date (transfer → reinitialize SLA)
       const baseDate = r.transferApprovedAt
@@ -1031,10 +1028,12 @@ router.post("/:id/assign", auth("admin"), async (req, res) => {
 router.get("/citizen/:id", auth("admin"), async (req, res) => {
   try {
     const { id } = req.params;
+    const pageNum = parseInt(req.query.page, 10) || 1;
+    const limitNum = parseInt(req.query.limit, 10) || 10;
 
     // Fetch citizen
     const citizen = await User.findById(id).select(
-      "name email role warnings blocked"
+      "name email role warnings blocked abuseAttempts abuseLogs"
     );
     if (!citizen) {
       return res.status(404).json({ message: "Citizen not found" });
@@ -1048,17 +1047,34 @@ router.get("/citizen/:id", auth("admin"), async (req, res) => {
     const textReports = await TextAddressReport.find({ reporter: id })
       .populate("assignedTo", "name department role")
       .sort({ createdAt: -1 });
+    const allReports = [...reports, ...textReports].sort((a,b) => b.createdAt - a.createdAt);
 
-    const allReports = [...reports, ...textReports];
+    const totalReports = allReports.length;
+    const totalPages = Math.ceil(totalReports / limitNum);
 
-    // Fetch transfer logs for all reports
-    const reportIds = allReports.map((r) => r._id);
+    // Global counts of all statuses for summary cards
+    const totalRejected = allReports.filter(r => 
+      r.status === "Rejected" || r.citizenAdminVerification?.verified === false
+    ).length;
+    const totalTransferred = allReports.filter(r => 
+      r.transfers && r.transfers.length > 0
+    ).length;
+    const totalResolved = allReports.filter(r => 
+      r.status === "Resolved"
+    ).length;
+    
+    // Slice for pagination
+    const startIndex = (pageNum - 1) * limitNum;
+    const paginatedArray = allReports.slice(startIndex, startIndex + limitNum);
+
+    // Fetch transfer logs for the paginated reports
+    const reportIds = paginatedArray.map((r) => r._id);
     const transfers = await TransferLog.find({
       report: { $in: reportIds },
     }).populate("requestedBy", "name email role");
 
     // Process reports for frontend
-    const processedReports = allReports.map((r) => {
+    const processedReports = paginatedArray.map((r) => {
       const reportTransfers = transfers
         .filter((t) => t.report.toString() === r._id.toString())
         .map((t) => ({
@@ -1094,6 +1110,13 @@ router.get("/citizen/:id", auth("admin"), async (req, res) => {
       citizenId: citizen._id,
       citizen,
       reports: processedReports,
+      totalReports,
+      totalRejected,
+      totalTransferred,
+      totalResolved,
+      totalPages,
+      currentPage: pageNum,
+      limit: limitNum
     });
   } catch (err) {
     console.error("❌ Citizen report fetch error:", err);

@@ -131,40 +131,30 @@ export default function AdminVerification() {
     }
 
     // Initial verification requirements
-    if (!isStatusUpdate) {
-      const severity = selectedSeverity[reportId];
-      const categoriesArr = selectedCategories[reportId] || [];
+    const severity = selectedSeverity[reportId];
+    const categoriesArr = selectedCategories[reportId] || [];
 
-      if (isApproved && (!severity || severity < 1 || severity > 5)) {
-        alert("Please select severity (1–5) before approving.");
-        return;
-      }
-      
-      if (isApproved && categoriesArr.length === 0) {
-        alert("Please select at least one category before approving.");
-        return;
-      }
+    if (isApproved && (!severity || severity < 1 || severity > 5)) {
+      alert("Please select severity (1–5) before approving.");
+      return;
+    }
+    
+    if (isApproved && categoriesArr.length === 0) {
+      alert("Please select at least one category before approving.");
+      return;
     }
 
     setActionLoading(reportId);
     try {
-      if (isStatusUpdate) {
-        // Verification for Officer Status Updates
-        await API.post(`/admin/verify-report/${reportId}`, {
-          approve: isApproved,
-          note,
-        });
-      } else {
-        // Initial Citizen Report Verification
-        const severity = selectedSeverity[reportId];
-        const categoriesArr = selectedCategories[reportId] || [];
-        await API.post(`/admin/verification/${reportId}/verify`, {
-          approve: isApproved,
-          note,
-          severity: isApproved ? Number(severity) : undefined,
-          categories: isApproved ? categoriesArr : undefined,
-        });
-      }
+      // Initial Citizen Report Verification
+      const severity = selectedSeverity[reportId];
+      const categoriesArr = selectedCategories[reportId] || [];
+      await API.post(`/admin/verification/${reportId}/verify`, {
+        approve: isApproved,
+        note,
+        severity: isApproved ? Number(severity) : undefined,
+        categories: isApproved ? categoriesArr : undefined,
+      });
 
       // Cleanup local state
       setSelectedSeverity((prev) => {
@@ -402,32 +392,6 @@ export default function AdminVerification() {
                   </div>
                 )}
 
-                {/* Officer Work Validation (Siamese) */}
-                {["Resolved", "Rejected"].includes(report.pendingStatus) && (
-                  <div className="flex flex-col gap-1 md:col-span-2 pt-2 border-t border-blue-100 dark:border-blue-800">
-                    <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Officer Work Validation (Siamese AI)</span>
-                    <div className="flex items-center gap-3">
-                      {report.officerValidationPass === true ? (
-                        <Badge className="bg-green-600 text-white border-0">
-                          ✅ Location Match Verified
-                        </Badge>
-                      ) : report.officerValidationPass === false ? (
-                        <Badge className="bg-red-600 text-white border-0">
-                          ⚠️ Warning: Location Mismatch Detected
-                        </Badge>
-                      ) : (
-                        <Badge variant="outline" className="text-gray-400">
-                          Validation Not Performed
-                        </Badge>
-                      )}
-                      {report.similarityScore && (
-                        <span className="text-xs text-blue-700 dark:text-blue-300 font-mono">
-                          (Similarity: {(report.similarityScore * 100).toFixed(1)}%)
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Detected Objects Tags */}
@@ -475,34 +439,6 @@ export default function AdminVerification() {
               </div>
             )}
 
-            {/* Officer Submitted Media (Proofs) */}
-            {report.pendingProofs?.length > 0 && (
-              <div>
-                <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200 mb-2">
-                  Officer Submitted Proofs
-                </h3>
-                <div className="flex flex-wrap gap-3">
-                  {report.pendingProofs.map((m, i) =>
-                    m.mime?.startsWith("image/") ? (
-                      <img
-                        key={i}
-                        src={m.url}
-                        alt="proof"
-                        className="w-44 h-44 object-cover rounded border cursor-pointer hover:scale-105 transition"
-                        onClick={() => window.open(m.url, "_blank")}
-                      />
-                    ) : (
-                      <video
-                        key={i}
-                        src={m.url}
-                        controls
-                        className="w-56 h-44 object-cover rounded border cursor-pointer hover:scale-105 transition"
-                      />
-                    )
-                  )}
-                </div>
-              </div>
-            )}
 
             {/* Severity and Admin Note */}
             <div className="space-y-3 mt-3">

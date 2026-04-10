@@ -469,7 +469,7 @@ const generateQRCode = async () => {
           aiMsg = "🚨 AI ALERT: Duplicate photo detected. Work attempt BLOCKED for potential fraud.";
         } else if (sim < 0.3) {
           aiMsg = `📍 AI REJECTED: Location mismatch detected (${(sim * 100).toFixed(1)}%). Please visit the correct site.`;
-        } else if (sim >= 0.7 && ((status === "Resolved" && pass) || (status === "Rejected" && !pass))) {
+        } else if (sim >= 0.67 && ((status === "Resolved" && pass) || (status === "Rejected" && !pass))) {
           aiMsg = `⚡ AI ZERO-TOUCH: Success! High-confidence match + Audit Agreement (${(sim * 100).toFixed(1)}%). Report finalized without admin review.`;
         } else {
           aiMsg = "📋 AI UNCERTAIN: Update submitted. Sent to Admin Desk for manual location/site verification.";
@@ -512,23 +512,31 @@ const generateQRCode = async () => {
   const isActiveStatus = ["Acknowledged", "In Progress"].includes(report.status);
   const canChat = isParticipant && isActiveStatus;
   const canVote = role === "citizen" && !isReporter && ["Acknowledged", "In Progress"].includes(report.status);
-  const canUpdateStatus = isDeptOfficer;
+  const canUpdateStatus = isDeptOfficer && !["Resolved", "Rejected"].includes(report.status);
 
   return (
     <div className="max-w-5xl mx-auto p-4 space-y-6">
 
       {/* 🚀 DUPLICATE REDIRECT BANNER 🚀 */}
       {fromDuplicate && (
-        <div className="bg-gradient-to-r from-blue-600 to-indigo-700 text-white rounded-2xl p-6 shadow-xl border border-blue-400/30 mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
+        <div className={`rounded-2xl p-6 shadow-xl border mb-8 animate-in fade-in slide-in-from-top-4 duration-500 ${
+          isReporter 
+            ? "bg-gradient-to-r from-red-600 to-orange-600 text-white border-red-400/30" 
+            : "bg-gradient-to-r from-blue-600 to-indigo-700 text-white border-blue-400/30"
+        }`}>
           <div className="flex items-center gap-4">
             <div className="bg-white/20 p-3 rounded-full backdrop-blur-sm">
-              <span className="text-2xl">📢</span>
+              <span className="text-2xl">{isReporter ? "🚨" : "📢"}</span>
             </div>
             <div className="flex-1">
-              <h3 className="text-xl font-bold">This is the original complaint!</h3>
-              <p className="text-indigo-100 text-sm">
-                Since yours was a duplicate of this existing issue, we've brought you here. 
-                Instead of reporting again, <strong>Upvote</strong> this one below to increase its importance for the authorities!
+              <h3 className="text-xl font-bold">
+                {isReporter ? "Self-Duplicate Spam Detected!" : "This is the original complaint!"}
+              </h3>
+              <p className="text-white/90 text-sm">
+                {isReporter 
+                  ? "You have already reported this issue. Attempting to re-report your own complaint is flagged as spam and has resulted in an automated infraction strike."
+                  : "Since yours was a duplicate of this existing issue, we've brought you here. Instead of reporting again, Upvote this one below to increase its importance for the authorities!"
+                }
               </p>
             </div>
           </div>
@@ -602,6 +610,13 @@ const generateQRCode = async () => {
                 <span className="text-gray-400 text-sm">Checking...</span>
               )}
             </div>
+            
+            {report.similarityScore !== undefined && report.similarityScore !== null && (
+              <div className="flex items-center gap-2 border-l pl-4 border-gray-300 dark:border-gray-600">
+                <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Siamese Network Confidence:</span>
+                <span className="text-blue-600 dark:text-blue-400 text-sm font-bold">{(report.similarityScore * 100).toFixed(1)}%</span>
+              </div>
+            )}
           </div>
 
           {/* New AI Consensus Breakdown */}
