@@ -17,3 +17,6 @@ pandas
 joblib
 xgboost
 overpy
+pymongo
+motor
+dnspython
