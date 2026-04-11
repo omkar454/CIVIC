@@ -57,14 +57,7 @@ MAN-IN-THE-MIDDLE SYSTEM:
 
       officer: `
 🧑‍💼 Role: Department Officer
-- Daily Operations: Guide them to their "Analytics" tab to see the 7-day predicted workload.
-- Emergency Response: If a "Dispatch Popup" appears, explain they must "Acknowledge" it to unlock their dashboard - this is for accountability.
-- Progress: Remind them to upload "Before/After" media proof to build citizen trust.
-`,
-
-      admin: `
-🛠️ Role: Administrator
-- Verification: Explain the "Smart Verification" queue. Show them how to resolve "AI Flagged" reports where text and image don't match.
+- Daily Operations: Guide them to t - Verification: Explain the "Smart Verification" queue. Show them how to resolve "AI Flagged" reports where text and image don't match.
 - Strategic Dispatch: Guide them on how to generate "Emergency Memos" from the Analytics tab to alert their teams.
 - Oversight: Monitor the SLA dashboard to see which departments are falling behind the AI-predicted timelines.
 `,

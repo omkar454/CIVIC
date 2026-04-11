@@ -66,7 +66,7 @@ router.post("/send", auth(["admin", "officer"]), async (req, res) => {
       await Notification.create({
         user: officerId,
         message: `📢 [Admin Command]: ${message.substring(0, 50)}${message.length > 50 ? "..." : ""}`,
-        type: "info"
+        type: "GENERAL"
       });
     } else {
       // Notify all admins if an officer sends a message
@@ -74,7 +74,7 @@ router.post("/send", auth(["admin", "officer"]), async (req, res) => {
       const notifications = admins.map(admin => ({
         user: admin._id,
         message: `📨 [Officer Message]: New feedback from ${sender.name}.`,
-        type: "info"
+        type: "GENERAL"
       }));
       await Notification.insertMany(notifications);
     }
