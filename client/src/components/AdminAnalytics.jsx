@@ -18,6 +18,12 @@ export default function AdminAnalytics() {
   const [departments, setDepartments] = useState([]);
   const [summary, setSummary] = useState([]);
   const [slaTrend, setSlaTrend] = useState([]);
+  const [resourceForecasts, setResourceForecasts] = useState({});
+  const [alertMessage, setAlertMessage] = useState("");
+  const [generatingAlert, setGeneratingAlert] = useState(false);
+  const [targetDept, setTargetDept] = useState("");
+  const [zoneData, setZoneData] = useState(null);
+  const [dispatchStatus, setDispatchStatus] = useState({ loading: false, success: false, error: "" });
   const [selectedDept, setSelectedDept] = useState("All"); // dropdown filter
   const [loading, setLoading] = useState(true);
 
@@ -77,7 +83,11 @@ export default function AdminAnalytics() {
     const fetchSla = API.get("/admin/sla-overdue-trend?period=month&months=6")
       .then((res) => setSlaTrend(res.data || []));
 
-    Promise.all([fetchTrends, fetchInsights, fetchSummary, fetchSla])
+    // 5️⃣ ML Resource Forecasting (Using 10 years of history to guarantee older local mock data is captured)
+    const fetchForecast = API.get("/ml/resources?historical_days=3650&predict_days_ahead=7", { headers: { Authorization: `Bearer ${token}` } })
+      .then(res => setResourceForecasts(res.data.forecasts || {}));
+
+    Promise.all([fetchTrends, fetchInsights, fetchSummary, fetchSla, fetchForecast])
       .catch((err) => console.error("Admin analytics fetch error:", err))
       .finally(() => setLoading(false));
   }, [token]);
@@ -111,6 +121,62 @@ export default function AdminAnalytics() {
     return monthData;
   });
 
+  // 🔄 Prepare ML Forecast Data
+  const forecastData = [];
+  if (Object.keys(resourceForecasts).length > 0) {
+    const categories = Object.keys(resourceForecasts);
+    if (categories.length > 0 && resourceForecasts[categories[0]].daily_predictions) {
+       resourceForecasts[categories[0]].daily_predictions.forEach((t, i) => {
+          let dayPoint = { date: t.date.substring(0, 10) };
+          categories.forEach(cat => {
+             if (resourceForecasts[cat].daily_predictions[i]) {
+                dayPoint[cat] = Math.max(0, resourceForecasts[cat].daily_predictions[i].predicted_volume);
+             }
+          });
+          forecastData.push(dayPoint);
+       });
+    }
+  }
+
+  const handleGenerateAlert = async () => {
+    setGeneratingAlert(true);
+    setAlertMessage("Initiating Gemini-Pro LLM connection... Scanning Hotspots...");
+    try {
+      const res = await API.get("/ml/alerts?days=90", { headers: { Authorization: `Bearer ${token}` } });
+      if (res.data.llm_draft_html) {
+          setAlertMessage(res.data.llm_draft_html);
+          setTargetDept(res.data.target_department || "general");
+          setZoneData(res.data.zone_data || null);
+          setDispatchStatus({ loading: false, success: false, error: "" });
+      } else {
+          setAlertMessage(`<div class="p-4 bg-green-100 text-green-800 rounded">✅ ${res.data.message || 'No critical infrastructure failures anticipated.'}</div>`);
+      }
+    } catch (error) {
+      setAlertMessage(`<div class="p-4 bg-red-100 text-red-800 rounded">❌ Error: Missing Critical Zones or AI Service Offline. Make sure Hotspot Service (Port 8002) is active.</div>`);
+    }
+    setGeneratingAlert(false);
+  };
+
+  const handleDispatchAlert = async () => {
+    setDispatchStatus({ loading: true, success: false, error: "" });
+    try {
+      await API.post("/ml/dispatch-alert", {
+        department: targetDept,
+        htmlNotice: alertMessage,
+        zoneData: zoneData
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      
+      setDispatchStatus({ loading: false, success: true, error: "" });
+    } catch (err) {
+      console.error("Dispatch error:", err);
+      setDispatchStatus({ 
+        loading: false, 
+        success: false, 
+        error: err.response?.data?.error || "Failed to dispatch alert." 
+      });
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center p-20 space-y-4">
@@ -122,9 +188,103 @@ export default function AdminAnalytics() {
 
   return (
     <div className="mt-10 space-y-6">
-      <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-gray-200">
-        📊 Admin Analytics & Department Insights
-      </h2>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-200">
+          📊 Admin Analytics & Department Insights
+        </h2>
+        
+        {/* Magic Gemini Panic Button */}
+        <button 
+           onClick={handleGenerateAlert}
+           disabled={generatingAlert}
+           className="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 flex items-center gap-2 rounded-lg shadow-md transition disabled:opacity-50"
+        >
+           {generatingAlert ? <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> : '🚨'}
+           {generatingAlert ? 'AI Scanning...' : 'Generate Emergency Notice'}
+        </button>
+      </div>
+
+      {alertMessage && (
+         <div className="bg-white dark:bg-gray-800 p-6 rounded-xl border border-red-200 shadow-xl relative overflow-hidden">
+             <button onClick={() => setAlertMessage("")} className="absolute top-2 right-4 text-gray-400 hover:text-gray-600 font-bold text-xl">×</button>
+             <h3 className="text-xl font-bold mb-4 text-red-600 border-b pb-2">Auto-Generated AI Action Memo</h3>
+             <div className="prose dark:prose-invert max-w-none text-sm leading-relaxed" 
+                  dangerouslySetInnerHTML={{ __html: alertMessage }} 
+             />
+             
+             {/* Dispatch Button Section */}
+             {targetDept && !alertMessage.includes("✅") && (
+               <div className="mt-6 pt-4 border-t flex flex-col md:flex-row items-center gap-4">
+                 <div className="flex-1">
+                   <p className="text-xs font-bold text-gray-400 uppercase">Target Intelligence Recipient:</p>
+                   <p className="text-sm font-black text-red-700 dark:text-red-400 uppercase tracking-widest">
+                     🏙️ {targetDept} Department Officers
+                   </p>
+                 </div>
+                 
+                 <button 
+                   onClick={handleDispatchAlert}
+                   disabled={dispatchStatus.loading || dispatchStatus.success}
+                   className={`${
+                     dispatchStatus.success 
+                       ? "bg-green-600 cursor-default" 
+                       : "bg-black hover:bg-gray-800"
+                   } text-white font-black py-3 px-8 rounded-xl shadow-lg transition-all flex items-center gap-3 active:scale-95 disabled:opacity-70`}
+                 >
+                   {dispatchStatus.loading ? (
+                     <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                   ) : dispatchStatus.success ? (
+                     "🚀 DISPATCHED"
+                   ) : (
+                     "🚀 DISPATCH TO DEPARTMENT"
+                   )}
+                 </button>
+               </div>
+             )}
+             
+             {dispatchStatus.success && (
+               <p className="text-center mt-3 text-green-600 font-bold animate-bounce">
+                 ✨ Alert confirmed. Officers will see this on their next login!
+               </p>
+             )}
+             {dispatchStatus.error && (
+               <p className="text-center mt-3 text-red-600 font-bold">
+                 ❌ {dispatchStatus.error}
+               </p>
+             )}
+         </div>
+      )}
+
+      {/* 🔮 Predictive Demand Forecasting */}
+      {forecastData.length > 0 && (
+        <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-gray-800 dark:to-gray-900 border border-purple-100 dark:border-gray-700 p-4 rounded-xl shadow">
+          <h3 className="text-lg font-bold mb-1 text-indigo-900 dark:text-indigo-300">
+            🔮 7-Day Resource Demand Forecast
+          </h3>
+          <p className="text-xs text-gray-500 mb-4 italic">Powered by Facebook Prophet ML Algorithm</p>
+          <ResponsiveContainer width="100%" height={350}>
+            <LineChart data={forecastData}>
+              <XAxis dataKey="date" tick={{fontSize: 12}} />
+              <YAxis />
+              <Tooltip wrapperStyle={{ borderRadius: '8px' }} />
+              <Legend />
+              {Object.keys(resourceForecasts).map((dept, idx) => (
+                  <Line
+                    key={`forecast-${dept}`}
+                    type="monotone"
+                    dataKey={dept}
+                    stroke={colorPalette[idx % colorPalette.length]}
+                    strokeWidth={3}
+                    strokeDasharray="5 5"
+                    dot={{ r: 4 }}
+                    activeDot={{ r: 8 }}
+                    name={dept.toUpperCase()}
+                  />
+              ))}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {/* 1️⃣ Complaint Trends (Last 6 Months) */}
       {trends.length > 0 && (

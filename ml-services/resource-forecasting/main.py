@@ -12,7 +12,7 @@ app = FastAPI(title="CIVIC Resource & Operations Intelligence API", version="5.0
 def read_root():
     return {"status": "Resource Forecasting & Intelligence Service is running", "module": "Module 5"}
 
-def _fetch_reports_dataframe(time_window_days: int = None):
+def _fetch_reports_dataframe(time_window_days: int = None, department: str = None):
     collection = get_db_collection()
     if collection is None:
         raise HTTPException(status_code=500, detail="Database connection not configured.")
@@ -21,6 +21,10 @@ def _fetch_reports_dataframe(time_window_days: int = None):
     if time_window_days:
         cutoff_date = datetime.utcnow() - timedelta(days=time_window_days)
         query["createdAt"] = {"$gte": cutoff_date}
+        
+    if department:
+        import re
+        query["department"] = {"$regex": f"^{re.escape(department)}$", "$options": "i"}
         
     reports_cursor = collection.find(query, {"category": 1, "createdAt": 1})
     
@@ -35,11 +39,11 @@ def _fetch_reports_dataframe(time_window_days: int = None):
     return pd.DataFrame(data)
 
 @app.get("/api/predict/resources")
-def get_resource_forecast(historical_days: int = 180, predict_days_ahead: int = 30):
+def get_resource_forecast(historical_days: int = 180, predict_days_ahead: int = 30, department: str = None):
     """
     Uses Facebook Prophet to forecast the volume of complaints per department over the next N days.
     """
-    df = _fetch_reports_dataframe(time_window_days=historical_days)
+    df = _fetch_reports_dataframe(time_window_days=historical_days, department=department)
     if df.empty:
         return {"forecasts": {}}
 

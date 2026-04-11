@@ -1,28 +1,40 @@
 // src/pages/HeatmapPage.jsx
 import { useEffect, useState } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Rectangle, Circle } from "react-leaflet";
 import HeatmapLayer from "../components/HeatmapLayer";
 import API from "../services/api";
 import L from "leaflet";
 
 export default function HeatmapPage() {
   const [reports, setReports] = useState([]);
+  const [hotspots, setHotspots] = useState([]);
+  const [predictions, setPredictions] = useState([]);
   const [selectedStatuses, setSelectedStatuses] = useState(["Open", "Acknowledged", "In Progress"]);
   const token = localStorage.getItem("accessToken");
 
   useEffect(() => {
-    const fetchReports = async () => {
+    const fetchAllData = async () => {
       try {
-        const res = await API.get("/reports", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        setReports(res.data.reports || []);
+        const headers = { Authorization: `Bearer ${token}` };
+        
+        // 1. Fetch Standard Reports
+        const resReports = await API.get("/reports", { headers });
+        setReports(resReports.data.reports || []);
+
+        // 2. Fetch Aggregated AI Hotspots
+        const resHotspots = await API.get("/ml/hotspots?epsilon_km=2.0&min_samples=3&days=3650", { headers });
+        setHotspots(resHotspots.data?.hotspots || []);
+
+        // 3. Fetch AI Infrastructure Predictions
+        const resPred = await API.get("/ml/infrastructure?days=3650", { headers });
+        setPredictions(resPred.data?.predictions || []);
+
       } catch (err) {
-        console.error("Failed to fetch reports:", err);
-        alert("Failed to load reports");
+        console.error("Failed to load map data streams:", err);
       }
     };
-    fetchReports();
+    
+    fetchAllData();
   }, [token]);
 
   // Red marker for exact locations
@@ -94,9 +106,66 @@ export default function HeatmapPage() {
                 <strong>{r.title}</strong>
                 <br />
                 {r.description}
+                <br />
+                <a href={`/reports/${r._id}`} className="text-blue-500 underline text-xs mt-1 block">View Complaint</a>
               </Popup>
             </Marker>
           ))}
+
+        {/* Machine Learning AI Bounding Boxes (DBSCAN Clusters) */}
+        {hotspots.map((hs, idx) => {
+          const bounds = [
+            [hs.bounds.min_lat, hs.bounds.min_lng],
+            [hs.bounds.max_lat, hs.bounds.max_lng],
+          ];
+          return (
+            <Rectangle
+              key={`hs-${idx}`}
+              bounds={bounds}
+              pathOptions={{ color: 'blue', weight: 4, fillOpacity: 0.05, dashArray: '5, 5' }}
+            >
+              <Popup>
+                <strong>Area Hotspot (DBSCAN AI)</strong>
+                <br />
+                Cluster Density: {hs.point_count} Reports
+                <br />
+                Avg Severity: {hs.average_severity.toFixed(1)}/5
+                <br />
+                Dominant Problem: {Object.keys(hs.top_categories).length > 0 ? Object.keys(hs.top_categories)[0].toUpperCase() : 'Mixed'}
+              </Popup>
+            </Rectangle>
+          );
+        })}
+
+        {/* AI Predictive Failure Radiuses */}
+        {predictions.map((pred, idx) => {
+          let color = "#F59E0B"; // Warning Orange
+          if (pred.trend_status === "CRITICAL") color = "#EF4444"; // Critical Red
+          else if (pred.trend_status === "STABLE") color = "#10B981"; // Stable Green
+
+          return (
+            <Circle
+              key={`pred-${idx}`}
+              center={[pred.zone.lat, pred.zone.lng]}
+              radius={pred.radius_km * 1000} // converting KM to Meters
+              pathOptions={{ color: color, fillColor: color, fillOpacity: 0.2, weight: 2 }}
+            >
+              <Popup>
+                <div className="text-center">
+                  <h3 className="font-bold" style={{ color }}>
+                    {pred.trend_status === "CRITICAL" ? '🚨' : pred.trend_status === "WARNING" ? '⚠️' : '✅'} 
+                    {pred.trend_status} ZONE
+                  </h3>
+                  <p className="text-xs font-semibold mt-1">
+                    Predicted Failure: <b>{pred.predicted_failure_days} Days</b>
+                  </p>
+                  <hr className="my-1"/>
+                  <span className="text-xs text-gray-600">Cascading Risk Score: {pred.risk_score.toFixed(1)}</span>
+                </div>
+              </Popup>
+            </Circle>
+          );
+        })}
       </MapContainer>
     </div>
   );

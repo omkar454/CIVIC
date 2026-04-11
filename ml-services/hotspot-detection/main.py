@@ -16,15 +16,22 @@ app = FastAPI(title="CIVIC Hotspot Detection & Trend Analytics API", version="4.
 def read_root():
     return {"status": "Hotspot Detection Service is running", "module": "Module 4"}
 
-def _fetch_reports_dataframe(time_window_days: int = None):
+def _fetch_reports_dataframe(time_window_days: int = None, department: str = None):
     collection = get_db_collection()
     if collection is None:
         raise HTTPException(status_code=500, detail="Database connection not configured. Check MONGO_URI in .env")
 
-    query = {}
+    # Clustering logic: Fast Reactivity. Cluster all active problems (including Open).
+    # Ignore spam/rejected and already-fixed (Resolved) issues.
+    query = {"status": {"$nin": ["Resolved", "Rejected"]}}
     if time_window_days:
         cutoff_date = datetime.utcnow() - timedelta(days=time_window_days)
         query["createdAt"] = {"$gte": cutoff_date}
+        
+    if department:
+        # Case-insensitive match on the actual MONGODB 'department' field, not 'category'
+        import re
+        query["department"] = {"$regex": f"^{re.escape(department)}$", "$options": "i"}
         
     # Fetch reports (only those with valid coordinates)
     reports_cursor = collection.find(query, {"location": 1, "severity": 1, "category": 1, "createdAt": 1})
@@ -51,11 +58,11 @@ def _fetch_reports_dataframe(time_window_days: int = None):
     return pd.DataFrame(data)
 
 @app.get("/api/hotspots/current")
-def get_current_hotspots(epsilon_km: float = 2.0, min_samples: int = 3, days: int = 30):
+def get_current_hotspots(epsilon_km: float = 2.0, min_samples: int = 3, days: int = 30, department: str = None):
     """
     Returns spatial hotspots by running DBSCAN clustering over recent reports.
     """
-    df = _fetch_reports_dataframe(time_window_days=days)
+    df = _fetch_reports_dataframe(time_window_days=days, department=department)
     if df.empty:
         return {"hotspots": []}
         
@@ -63,12 +70,12 @@ def get_current_hotspots(epsilon_km: float = 2.0, min_samples: int = 3, days: in
     return {"hotspots": hotspots}
 
 @app.get("/api/predict/infrastructure")
-def get_failure_predictions(days: int = 90):
+def get_failure_predictions(days: int = 90, department: str = None):
     """
     Forecasts future major issues based on historical spatial density and failure rates.
     """
     # Fetch a longer historical context for predictions
-    df = _fetch_reports_dataframe(time_window_days=days)
+    df = _fetch_reports_dataframe(time_window_days=days, department=department)
     if df.empty:
         return {"predictions": []}
         

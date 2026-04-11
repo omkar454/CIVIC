@@ -13,6 +13,15 @@ const NotificationSchema = new mongoose.Schema(
       required: [true, "Message is required"],
       trim: true,
     },
+    type: {
+      type: String,
+      enum: ["GENERAL", "SYSTEM", "EMERGENCY_NOTICE"],
+      default: "GENERAL",
+    },
+    metadata: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
     read: {
       type: Boolean,
       default: false,

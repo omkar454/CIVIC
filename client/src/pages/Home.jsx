@@ -2,7 +2,7 @@
 import { useEffect, useState, useMemo } from "react";
 import axios from "axios";
 import { Link, useNavigate } from "react-router-dom";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Rectangle, Circle } from "react-leaflet";
 import L from "leaflet";
 import HeatmapLayer from "../components/HeatmapLayer";
 import API from "../services/api.js";
@@ -81,6 +81,11 @@ export default function Home() {
   const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [userData, setUserData] = useState(null);
+  const [hotspots, setHotspots] = useState([]);
+  const [predictions, setPredictions] = useState([]);
+  const [emergencyAlerts, setEmergencyAlerts] = useState([]);
+  const [showEmergencyModal, setShowEmergencyModal] = useState(false);
+  const [activeAlert, setActiveAlert] = useState(null);
   const [selectedStatuses, setSelectedStatuses] = useState(["Open", "Acknowledged", "In Progress"]);
   const [adminPage, setAdminPage] = useState(1);
   const itemsPerPage = 3;
@@ -163,6 +168,33 @@ useEffect(() => {
         setLoading(false);
       }
     })();
+
+    // Independent ML Fetches (won't crash main report feed if Python is offline)
+    (async () => {
+      try {
+        const h = await axios.get(`http://localhost:5000/api/ml/hotspots?epsilon_km=2.0&min_samples=3&days=3650`, { headers: { Authorization: `Bearer ${token}` } });
+        setHotspots(h.data?.hotspots || []);
+      } catch (err) { console.warn("Hotspot fetch failed", err); }
+      
+      try {
+        const p = await axios.get(`http://localhost:5000/api/ml/infrastructure?days=3650`, { headers: { Authorization: `Bearer ${token}` } });
+        setPredictions(p.data?.predictions || []);
+      } catch (err) { console.warn("Predictive fetch failed", err); }
+      
+      // Fetch Emergency Alerts for Officers
+      if (role === "officer") {
+        try {
+          const res = await API.get("/notifications?limit=5");
+          const unreadEmergencies = (res.data.notifications || []).filter(n => n.type === "EMERGENCY_NOTICE" && !n.read);
+          if (unreadEmergencies.length > 0) {
+            setEmergencyAlerts(unreadEmergencies);
+            setActiveAlert(unreadEmergencies[0]);
+            setShowEmergencyModal(true);
+          }
+        } catch (err) { console.warn("Failed to fetch emergency alerts", err); }
+      }
+    })();
+
   }, [token, role, userDepartment]);
 
   // Heatmap points logic
@@ -325,8 +357,59 @@ useEffect(() => {
     }
   };
 
+  // 🚨 Handle Marking Alert as Read
+  const handleMarkAlertRead = async (id) => {
+    try {
+      await API.post(`/notifications/${id}/read`);
+      setShowEmergencyModal(false);
+      // Small delay to let user see it's closed before updating logic if needed
+    } catch (err) { console.error("Failed to mark alert as read", err); }
+  };
+
   return (
     <div className="max-w-7xl mx-auto p-4">
+      {/* 🛑 HIGH PRIORITY BMC EMERGENCY MODAL */}
+      {showEmergencyModal && activeAlert && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+              <div className="bg-white dark:bg-gray-900 w-full max-w-2xl rounded-3xl shadow-2xl border-4 border-red-600 overflow-hidden animate-in zoom-in duration-300">
+                  <div className="bg-red-600 p-4 text-white flex justify-between items-center">
+                      <div className="flex items-center gap-3">
+                          <span className="text-3xl animate-pulse">🚨</span>
+                          <div>
+                              <h2 className="font-black text-xl tracking-tighter uppercase">CRITICAL SYSTEM DISPATCH</h2>
+                              <p className="text-[10px] opacity-80 font-bold uppercase tracking-widest leading-none">Intelligence Ref: {activeAlert._id.substring(activeAlert._id.length-8)}</p>
+                          </div>
+                      </div>
+                      <div className="text-right">
+                          <p className="text-[10px] font-black uppercase tracking-tighter">Bandra Municipal Corporation</p>
+                          <p className="text-[10px] opacity-70 italic">Official Action Required</p>
+                      </div>
+                  </div>
+                  
+                  <div className="p-8 max-h-[70vh] overflow-y-auto bg-gray-50/50 dark:bg-transparent">
+                      <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-inner border border-gray-100 dark:border-gray-700">
+                          <div 
+                              className="prose dark:prose-invert max-w-none text-sm leading-relaxed" 
+                              dangerouslySetInnerHTML={{ __html: activeAlert.metadata?.htmlNotice }} 
+                          />
+                      </div>
+                      
+                      <div className="mt-8 flex flex-col md:flex-row items-center justify-between gap-4">
+                          <div className="text-gray-500 text-[10px] font-bold italic">
+                              Alert Dispatched: {new Date(activeAlert.createdAt).toLocaleString()}
+                          </div>
+                          <button 
+                              onClick={() => handleMarkAlertRead(activeAlert._id)}
+                              className="w-full md:w-auto bg-red-600 hover:bg-black text-white font-black py-4 px-10 rounded-2xl shadow-xl transition-all active:scale-95 uppercase tracking-widest text-sm"
+                          >
+                              Acknowledge & Close
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
+
       {/* 🟦 Dynamic Role Banner */}
       <div
         className={`${bannerColor} border px-4 py-3 rounded mb-6 font-semibold text-center text-lg`}
@@ -453,6 +536,61 @@ useEffect(() => {
                   </Popup>
                 </Marker>
               ))}
+
+            {/* Machine Learning AI Bounding Boxes (DBSCAN Clusters) */}
+            {hotspots.map((hs, idx) => {
+              const bounds = [
+                [hs.bounds.min_lat, hs.bounds.min_lng],
+                [hs.bounds.max_lat, hs.bounds.max_lng],
+              ];
+              return (
+                <Rectangle
+                  key={`hs-${idx}`}
+                  bounds={bounds}
+                  pathOptions={{ color: 'blue', weight: 4, fillOpacity: 0.05, dashArray: '5, 5' }}
+                >
+                  <Popup>
+                    <strong>Area Hotspot (DBSCAN AI)</strong>
+                    <br />
+                    Cluster Density: {hs.point_count} Reports
+                    <br />
+                    Avg Severity: {hs.average_severity.toFixed(1)}/5
+                    <br />
+                    Dominant Problem: {Object.keys(hs.top_categories).length > 0 ? Object.keys(hs.top_categories)[0].toUpperCase() : 'Mixed'}
+                  </Popup>
+                </Rectangle>
+              );
+            })}
+
+            {/* AI Predictive Failure Radiuses */}
+            {predictions.map((pred, idx) => {
+              let color = "#F59E0B"; // Warning Orange
+              if (pred.trend_status === "CRITICAL") color = "#EF4444"; // Critical Red
+              else if (pred.trend_status === "STABLE") color = "#10B981"; // Stable Green
+
+              return (
+                <Circle
+                  key={`pred-${idx}`}
+                  center={[pred.zone.lat, pred.zone.lng]}
+                  radius={pred.radius_km * 1000} // converting KM to Meters
+                  pathOptions={{ color: color, fillColor: color, fillOpacity: 0.2, weight: 2 }}
+                >
+                  <Popup>
+                    <div className="text-center">
+                      <h3 className="font-bold" style={{ color }}>
+                        {pred.trend_status === "CRITICAL" ? '🚨' : pred.trend_status === "WARNING" ? '⚠️' : '✅'} 
+                        {pred.trend_status} ZONE
+                      </h3>
+                      <p className="text-xs font-semibold mt-1">
+                        Predicted Failure: <b>{pred.predicted_failure_days} Days</b>
+                      </p>
+                      <hr className="my-1"/>
+                      <span className="text-xs text-gray-600">Cascading Risk Score: {pred.risk_score.toFixed(1)}</span>
+                    </div>
+                  </Popup>
+                </Circle>
+              );
+            })}
           </MapContainer>
           <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">
             Only geocoded reports contribute to the heatmap; redder areas
