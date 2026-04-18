@@ -22,3 +22,5 @@ motor
 dnspython
 prophet
 google-genai
+pinecone
+pinecone-client

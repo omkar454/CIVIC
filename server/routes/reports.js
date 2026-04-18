@@ -108,6 +108,41 @@ const mapCategoryToDepartment = (category) =>
   categoryToDept[category] || "general";
 
 /* ------------------------------------------------------------
+   🧠 RAG Auto-Sync: Index new complaints into Pinecone
+   Fire-and-forget — does not block the report submission.
+------------------------------------------------------------ */
+const RAG_API_URL = process.env.RAG_API_URL || "http://127.0.0.1:8004";
+
+async function syncToRAG(report) {
+  try {
+    const payload = {
+      id: report._id.toString(),
+      title: report.title || "",
+      description: report.description || "",
+      category: report.category || "other",
+      address: report.address || "",
+      status: report.status || "Open",
+      department: report.department || "general",
+    };
+
+    const response = await fetch(`${RAG_API_URL}/embed-store`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    if (response.ok) {
+      console.log(`✅ RAG Sync: Complaint ${report._id} indexed in Pinecone`);
+    } else {
+      console.warn(`⚠️ RAG Sync failed for ${report._id}:`, response.status);
+    }
+  } catch (err) {
+    // Non-blocking: don't crash if RAG service is down
+    console.warn(`⚠️ RAG Sync unreachable for ${report._id}:`, err.message);
+  }
+}
+
+/* ------------------------------------------------------------
    ⚙️ Utility: Calculate Priority
 ------------------------------------------------------------ */
 function calculatePriority(severity, votes) {
@@ -321,6 +356,9 @@ router.post("/", auth("citizen"), async (req, res) => {
         calculateSmartPriority(textReport);
       }
 
+      // 🧠 RAG: Auto-index in Pinecone (fire-and-forget)
+      syncToRAG(textReport);
+
       return res.status(201).json({
         message: aiVerified ? "Report auto-verified" : "Report submitted",
         report: textReport,
@@ -386,6 +424,9 @@ router.post("/", auth("citizen"), async (req, res) => {
     if (aiVerified) {
       calculateSmartPriority(report);
     }
+
+    // 🧠 RAG: Auto-index in Pinecone (fire-and-forget)
+    syncToRAG(report);
 
     res.status(201).json({
       message: aiVerified ? "AI mapped successfully" : "AI mismatch: Assigned to Admin Review",
@@ -642,6 +683,9 @@ router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
     // Save report
     // ----------------------------
     await report.save();
+
+    // 🧠 RAG: Auto-sync updated status/metadata to Pinecone
+    syncToRAG(report);
 
     res.status(200).json({
       message:
