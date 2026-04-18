@@ -209,9 +209,13 @@ UserSchema.statics.autoWarn = async function (
   }
 
   await user.save();
-  return { 
-    attempts: user.abuseAttempts, 
-    message 
+  // Final Save & Return
+  await user.save();
+
+  return {
+    message,
+    attempts: user.abuseAttempts,
+    isHardStrike
   };
 };
 
