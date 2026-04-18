@@ -16,7 +16,7 @@ export default function HeatmapPage() {
     const fetchAllData = async () => {
       try {
         const headers = { Authorization: `Bearer ${token}` };
-        
+
         // 1. Fetch Standard Reports
         const resReports = await API.get("/reports", { headers });
         setReports(resReports.data.reports || []);
@@ -33,7 +33,7 @@ export default function HeatmapPage() {
         console.error("Failed to load map data streams:", err);
       }
     };
-    
+
     fetchAllData();
   }, [token]);
 
@@ -73,7 +73,7 @@ export default function HeatmapPage() {
             <span className="text-sm text-gray-600 dark:text-gray-400 group-hover:text-blue-600">{st}</span>
           </label>
         ))}
-        <button 
+        <button
           onClick={() => setSelectedStatuses(["Open", "Acknowledged", "In Progress", "Resolved", "Rejected"])}
           className="text-xs text-blue-500 hover:underline ml-auto"
         >
@@ -153,13 +153,13 @@ export default function HeatmapPage() {
               <Popup>
                 <div className="text-center">
                   <h3 className="font-bold" style={{ color }}>
-                    {pred.trend_status === "CRITICAL" ? '🚨' : pred.trend_status === "WARNING" ? '⚠️' : '✅'} 
+                    {pred.trend_status === "CRITICAL" ? '🚨' : pred.trend_status === "WARNING" ? '⚠️' : '✅'}
                     {pred.trend_status} ZONE
                   </h3>
                   <p className="text-xs font-semibold mt-1">
                     Predicted Failure: <b>{pred.predicted_failure_days} Days</b>
                   </p>
-                  <hr className="my-1"/>
+                  <hr className="my-1" />
                   <span className="text-xs text-gray-600">Cascading Risk Score: {pred.risk_score.toFixed(1)}</span>
                 </div>
               </Popup>

@@ -23,6 +23,7 @@ load_dotenv()
 
 from embedding import build_embedding_text, generate_embedding, generate_embeddings_batch
 from db import get_pinecone_index, get_reports_collection, fetch_reports_by_ids
+from moderation import scan_vulgarity
 
 # ─── Logging Setup ───────────────────────────────────────────────────────
 
@@ -43,6 +44,9 @@ async def lifespan(app: FastAPI):
         # Pre-load model so the first request isn't slow
         from embedding import get_model
         get_model()
+        # Pre-load moderation model
+        from moderation import get_moderation_model
+        get_moderation_model()
         # Test DB connections
         get_pinecone_index()
         get_reports_collection()
@@ -102,6 +106,12 @@ class BatchSyncRequest(BaseModel):
     limit: int = Field(default=500, ge=1, le=5000, description="Max complaints to sync")
 
 
+class ModerationRequest(BaseModel):
+    """Input for vulgarity scanning."""
+    text: str = Field(..., description="Text to scan")
+    threshold: float = Field(default=0.7, ge=0.0, le=1.0, description="Confidence threshold")
+
+
 # ─── Duplicate Detection Thresholds ─────────────────────────────────────
 
 DUPLICATE_THRESHOLD = 0.80
@@ -121,8 +131,19 @@ def health():
         "status": "healthy",
         "model": "paraphrase-multilingual-MiniLM-L12-v2",
         "dimension": 384,
+        "moderation_model": "xlmr-large-toxicity-classifier",
         "cache_size": len(_search_cache),
     }
+
+
+@app.post("/scan-vulgarity")
+async def scan_vulgarity_endpoint(req: ModerationRequest):
+    """
+    Endpoint for semantic vulgarity/toxicity detection.
+    Returns: { is_toxic: bool, score: float }
+    """
+    result = scan_vulgarity(req.text, req.threshold)
+    return result
 
 
 @app.post("/embed-store")

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { Send, Paperclip, X, Image as ImageIcon, User, ShieldCheck } from "lucide-react";
 import { Button } from "./ui/button";
+import SecurityBlockModal from "./SecurityBlockModal";
 
 /**
  * OfficerMessenger Components
@@ -14,6 +15,8 @@ export default function OfficerMessenger({ officerId, isAdminView }) {
   const [attachments, setAttachments] = useState([]); // Local file objects
   const [uploading, setUploading] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showSecurityModal, setShowSecurityModal] = useState(false);
+  const [securityData, setSecurityData] = useState(null);
   
   const scrollRef = useRef(null);
   const token = localStorage.getItem("accessToken");
@@ -92,7 +95,12 @@ export default function OfficerMessenger({ officerId, isAdminView }) {
       setAttachments([]);
     } catch (err) {
       console.error("Failed to send message:", err);
-      alert("Error sending message. Please try again.");
+      if (err.response?.status === 403 && err.response?.data?.abuseData) {
+        setSecurityData(err.response.data);
+        setShowSecurityModal(true);
+      } else {
+        alert("Error sending message. Please try again.");
+      }
     } finally {
       setUploading(false);
     }
@@ -233,6 +241,11 @@ export default function OfficerMessenger({ officerId, isAdminView }) {
           </Button>
         </form>
       </div>
+      <SecurityBlockModal 
+        isOpen={showSecurityModal} 
+        onClose={() => setShowSecurityModal(false)}
+        fraudData={securityData}
+      />
     </div>
   );
 }

@@ -13,6 +13,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import HeatmapLayer from "../components/HeatMapLayer";
 import VisionUploader from "../components/VisionUploader";
+import SecurityBlockModal from "../components/SecurityBlockModal";
 
 // Red marker icon for selected location
 const redIcon = new L.Icon({
@@ -601,88 +602,11 @@ export default function ReportForm() {
           </button>
         </form>
       {/* Fraud Detection Modal (Inauthentic Image) */}
-      {showFraudModal && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-xl p-4">
-          <div className={`bg-white dark:bg-gray-800 rounded-3xl shadow-2xl p-8 max-w-md w-full border-2 transform transition-all animate-in zoom-in-95 duration-300 ${
-            fraudData?.abuseData?.attempts >= 6 ? "border-black dark:border-red-900" : "border-red-500/30"
-          }`}>
-            <div className="flex flex-col items-center text-center space-y-5">
-              <div className={`w-20 h-20 rounded-full flex items-center justify-center ${
-                fraudData?.abuseData?.attempts >= 6 ? "bg-black text-white" : "bg-red-100 dark:bg-red-900/40"
-              }`}>
-                <span className="text-4xl">{fraudData?.abuseData?.attempts >= 6 ? "💀" : "🚫"}</span>
-              </div>
-              <div className="space-y-2">
-                <h3 className={`text-3xl font-black ${
-                  fraudData?.abuseData?.attempts >= 6 ? "text-black dark:text-red-500" : "text-red-600 dark:text-red-400"
-                }`}>
-                  {fraudData?.abuseData?.attempts >= 6 ? "ACCESS TERMINATED" : "Fraud Detected!"}
-                </h3>
-                <p className="text-gray-500 font-bold uppercase tracking-widest text-[10px]">
-                  {fraudData?.abuseData?.attempts >= 6 ? "Permanent Security Ban" : "AI Security Block Activated"}
-                </p>
-              </div>
-              
-              <div className={`p-4 rounded-2xl border w-full text-sm ${
-                fraudData?.abuseData?.attempts >= 6 
-                  ? "bg-gray-900 text-gray-300 border-gray-700" 
-                  : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border-red-100 dark:border-red-800/50"
-              }`}>
-                <p className="font-medium mb-2">
-                  {fraudData?.abuseData?.attempts >= 6 
-                    ? "Your account has been permanently disabled due to continuous policy violations. You are no longer permitted to access the CIVIC platform."
-                    : (fraudData?.message || "Our AI Vision Engine determined that your photo does not contain any valid civic issues.")
-                  }
-                </p>
-                {fraudData?.abuseData && (
-                  <div className="flex items-center justify-center gap-2 font-black text-xs">
-                    <span>Final Violation Count:</span>
-                    <span className="bg-red-600 text-white px-2 py-0.5 rounded">
-                      {fraudData.abuseData.attempts} / 6
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {fraudData?.abuseData?.attempts < 6 && (
-                <p className="text-gray-600 dark:text-gray-400 text-xs italic">
-                  Repeated attempts to submit fraudulent reports will result in a permanent account ban.
-                </p>
-              )}
-
-              <div className="w-full pt-2 flex flex-col gap-3">
-                {fraudData?.abuseData?.attempts >= 6 ? (
-                  <button
-                    onClick={() => {
-                      localStorage.clear();
-                      navigate("/login");
-                      window.location.reload(); 
-                    }}
-                    className="w-full bg-black hover:bg-gray-900 text-white font-bold py-4 rounded-2xl shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2"
-                  >
-                    Logout & Exit Platform
-                  </button>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => navigate("/")}
-                      className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-4 rounded-2xl shadow-lg shadow-red-500/30 transition-all active:scale-95 flex items-center justify-center gap-2"
-                    >
-                      🛡️ Check Account Integrity
-                    </button>
-                    <button
-                      onClick={() => setShowFraudModal(false)}
-                      className="w-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-sm font-bold"
-                    >
-                      Dismiss
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <SecurityBlockModal 
+        isOpen={showFraudModal} 
+        onClose={() => setShowFraudModal(false)}
+        fraudData={fraudData}
+      />
 
       {showDuplicateModal && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-xl p-4">

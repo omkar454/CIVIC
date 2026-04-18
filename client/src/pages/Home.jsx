@@ -437,10 +437,13 @@ useEffect(() => {
           will be blocked automatically.
           {userData.abuseLogs?.length > 0 && (
             <ul className="list-disc pl-6 mt-2 text-sm text-yellow-700 dark:text-yellow-200">
-              {userData.abuseLogs.filter(log => log.isHardStrike).map((log, i) => (
+              {userData.abuseLogs.map((log, i) => (
                 <li key={i}>
                   <strong>{new Date(log.date).toLocaleDateString()}:</strong>{" "}
-                  <span className="font-bold">[{log.admin ? "👤 BMC ADMIN" : "🤖 BMC AI"}]</span> - {log.reason}
+                  <span className={`font-bold mr-2 ${log.isHardStrike ? "text-red-600" : "text-yellow-600"}`}>
+                    [{log.isHardStrike ? "🚨 WARNING" : "⚠️ WARNING"}]
+                  </span>
+                  - {log.reason}
                 </li>
               ))}
             </ul>

@@ -4,6 +4,7 @@ import OfficerChat from "../models/OfficerChat.js";
 import auth from "../middleware/auth.js";
 import User from "../models/User.js";
 import Notification from "../models/Notification.js";
+import { checkVulgarity } from "../utils/moderation.js";
 
 const router = express.Router();
 
@@ -48,6 +49,16 @@ router.post("/send", auth(["admin", "officer"]), async (req, res) => {
     // Security: Officers can only send messages as themselves
     if (sender.role === "officer" && sender.id !== officerId) {
       return res.status(403).json({ message: "Access denied. You can only send messages from your own account." });
+    }
+
+    // 🛡️ Semantic Vulgarity Check
+    const moderation = await checkVulgarity(message, sender.id, sender.role);
+    if (moderation.isVulgar) {
+      return res.status(403).json({
+        message: moderation.message || "❌ MESSAGE BLOCKED: Vulgarity detected.",
+        error: "A critical audit log has been created for this behavior.",
+        abuseData: { attempts: moderation.attempts }
+      });
     }
 
     const newMessage = await OfficerChat.create({

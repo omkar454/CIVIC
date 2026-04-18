@@ -8,6 +8,7 @@ import Notification from "../models/Notification.js";
 import User from "../models/User.js";
 import auth from "../middleware/auth.js";
 import fetch from "node-fetch";
+import { checkVulgarity } from "../utils/moderation.js";
 
 const router = express.Router();
 
@@ -113,6 +114,18 @@ router.post("/:id/verify", auth("admin"), async (req, res) => {
 
     if (typeof approve === "undefined")
       return res.status(400).json({ message: "approve (true/false) required" });
+
+    // 🛡️ Semantic Vulgarity Check (Admin Note)
+    if (note) {
+      const moderation = await checkVulgarity(note, req.user.id, req.user.role, req.params.id);
+      if (moderation.isVulgar) {
+        return res.status(403).json({
+          message: moderation.message || "❌ ACTION BLOCKED: Vulgarity detected in your note.",
+          error: "Administrative actions must maintain professional language.",
+          abuseData: { attempts: moderation.attempts }
+        });
+      }
+    }
 
     const report = await Report.findById(req.params.id).populate(
       "reporter",

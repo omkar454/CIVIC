@@ -3,6 +3,7 @@ import express from "express";
 import bcrypt from "bcryptjs";
 import User from "../models/User.js";
 import { signAccessToken, signRefreshToken } from "../utils/jwt.js";
+import { checkVulgarity } from "../utils/moderation.js";
 
 const router = express.Router();
 
@@ -15,6 +16,16 @@ router.post("/register", async (req, res) => {
 
     if (!name || !email || !password)
       return res.status(400).json({ message: "All fields are required" });
+
+    // 🛡️ Semantic Vulgarity Check (Registration Name)
+    const moderation = await checkVulgarity(name, null, role);
+    if (moderation.isVulgar) {
+      return res.status(403).json({
+        message: "❌ REGISTRATION BLOCKED: Vulgarity detected in name.",
+        error: "Usernames must maintain professional language.",
+        abuseData: moderation
+      });
+    }
 
     const existing = await User.findOne({ email });
     if (existing)

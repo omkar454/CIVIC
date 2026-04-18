@@ -44,7 +44,7 @@ const AccountHealth = ({ userData }) => {
           </div>
           <p className="mt-2 text-xs text-gray-500 dark:text-gray-400 italic">
             {role === 'citizen' 
-              ? "Your trust score decreases with fake reports or excessive spam."
+              ? "Your trust score decreases with fake reports, excessive spam, or vulgar language."
               : "Your performance score decreases with SLA breaches."}
           </p>
         </div>

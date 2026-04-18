@@ -6,6 +6,7 @@ import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
+import SecurityBlockModal from "../components/SecurityBlockModal";
 
 // Red marker icon
 const redIcon = new L.Icon({
@@ -244,6 +245,8 @@ export default function ReportDetail() {
   const [officerFiles, setOfficerFiles] = useState([]); // selected files
   const [uploadedUrls, setUploadedUrls] = useState([]); // Cloudinary uploaded URLs
   const [qrCodeUrl, setQrCodeUrl] = useState(null);
+  const [showSecurityModal, setShowSecurityModal] = useState(false);
+  const [securityData, setSecurityData] = useState(null);
 
   const availableStatuses = [
     "Open",
@@ -388,7 +391,12 @@ const generateQRCode = async () => {
       fetchReport();
     } catch (err) {
       console.error("Add comment error:", err);
-      alert(err.response?.data?.message || "Failed to send message");
+      if (err.response?.status === 403 && err.response?.data?.abuseData) {
+        setSecurityData(err.response.data);
+        setShowSecurityModal(true);
+      } else {
+        alert(err.response?.data?.message || "Failed to send message");
+      }
     }
   };
 
@@ -487,7 +495,12 @@ const generateQRCode = async () => {
       fetchReport();
     } catch (err) {
       console.error("Status update error:", err);
-      alert(err.response?.data?.message || "Status update failed");
+      if (err.response?.status === 403 && err.response?.data?.abuseData) {
+        setSecurityData(err.response.data);
+        setShowSecurityModal(true);
+      } else {
+        alert(err.response?.data?.message || "Status update failed");
+      }
     }
   };
 
@@ -1179,6 +1192,11 @@ const generateQRCode = async () => {
           )}
         </div>
       </div>
+      <SecurityBlockModal 
+        isOpen={showSecurityModal} 
+        onClose={() => setShowSecurityModal(false)}
+        fraudData={securityData}
+      />
     </div>
   );
 }

@@ -140,36 +140,33 @@ UserSchema.statics.autoWarn = async function (
   if (!user) return null;
 
   user.abuseAttempts += 1;
-  let isHardStrike = false;
+  // Officers get immediate audit logs for vulgarity (Performance Breach) but NO 'Citizen-style' strikes/blocks
+  let isHardStrike = (user.role === "officer" && category === "Vulgarity");
   let message = "";
 
-  // The 6-Step Sequence Logic
-  // 1, 2: Soft
-  // 3: Strike 1
-  // 4: Soft
-  // 5: Strike 2
-  // 6: Strike 3 (Block)
-  if (user.abuseAttempts === 3) {
-    user.warnings += 1;
-    isHardStrike = true;
-    message = `🚨 [STRIKE 1]: ${reason}`;
-  } else if (user.abuseAttempts === 5) {
-    user.warnings += 1;
-    isHardStrike = true;
-    message = `🚨 [STRIKE 2]: ${reason}`;
-  } else if (user.abuseAttempts >= 6) {
-    // 🛡️ SECURITY: Officers are never blocked automatically
-    if (user.role !== "officer") {
+  if (user.role === "officer") {
+    // 👮 Officers: No formal strikes, just Audit Logging for Administration
+    isHardStrike = true; // Still mark as Hard Strike so it shows in the Admin's Performance Audit Center
+    message = `🛡️ [ADVISORY]: Unprofessional or Vulgar language detected. Official staff are required to maintain strict professional standards. This incident has been specifically logged for Administrative review.`;
+  } else {
+    // 👥 Citizens: 6-Step Sequence Logic
+    if (user.abuseAttempts === 3) {
+      user.warnings += 1;
+      isHardStrike = true;
+      message = `🚨 [STRIKE 1]: ${reason}`;
+    } else if (user.abuseAttempts === 5) {
+      user.warnings += 1;
+      isHardStrike = true;
+      message = `🚨 [STRIKE 2]: ${reason}`;
+    } else if (user.abuseAttempts >= 6) {
       user.warnings = 3;
       user.blocked = true;
       message = `🚨 [FINAL STRIKE]: Account Blocked. Reason: ${reason}`;
+      isHardStrike = true;
     } else {
-      message = `🚨 [CRITICAL AUDIT]: Performance Breach Logged. Reason: ${reason}`;
+      // Attempt 1, 2, 4 are Soft Warnings for Citizens
+      message = `⚠️ [AI ALERT]: ${reason}`;
     }
-    isHardStrike = true;
-  } else {
-    // Attempt 1, 2, 4 are Soft Warnings
-    message = `⚠️ [AI ALERT]: ${reason}`;
   }
 
   // Push to Abuse Logs
@@ -201,23 +198,8 @@ UserSchema.statics.autoWarn = async function (
   }
 
   await user.save();
-
-  // 🔔 Create Notification
-  try {
-    const Notification = mongoose.model("Notification");
-    await Notification.create({
-      user: user._id,
-      message,
-      type: isHardStrike ? "error" : "warning"
-    });
-  } catch (err) {
-    console.error("AutoWarn notification failed:", err.message);
-  }
-
   return { 
     attempts: user.abuseAttempts, 
-    warnings: user.warnings, 
-    blocked: user.blocked,
     message 
   };
 };

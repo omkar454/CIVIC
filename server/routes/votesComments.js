@@ -6,6 +6,7 @@ import Report from "../models/Report.js";
 import TextAddressReport from "../models/TextAddressReport.js";
 import User from "../models/User.js";
 import Notification from "../models/Notification.js";
+import { checkVulgarity } from "../utils/moderation.js";
 
 const router = express.Router();
 
@@ -173,6 +174,17 @@ router.post("/:id/comment", auth(["citizen", "officer"]), async (req, res) => {
       return res.status(403).json({
         success: false,
         message: "Unauthorized: You are not a participant in this coordination chat.",
+      });
+    }
+
+    // 🛡️ Semantic Vulgarity Check
+    const moderation = await checkVulgarity(message, req.user.id, req.user.role, report._id);
+    if (moderation.isVulgar) {
+      return res.status(403).json({
+        success: false,
+        message: moderation.message || "❌ MESSAGE BLOCKED: Vulgarity detected.",
+        error: "Your account has been flagged for this behavior.",
+        abuseData: { attempts: moderation.attempts }
       });
     }
 

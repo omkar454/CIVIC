@@ -9,6 +9,7 @@ import Notification from "../models/Notification.js";
 import auth from "../middleware/auth.js";
 import TransferLog from "../models/TransferLog.js";
 import fetch from "node-fetch";
+import { checkVulgarity } from "../utils/moderation.js";
 
 const router = express.Router();
 
@@ -259,8 +260,20 @@ router.post("/", auth("citizen"), async (req, res) => {
     }
 
     // ------------------------------------------------------------
-    // 🛡️ Trigger 1: Fake Image Strike (Citizens Only)
+    // 🛡️ Trigger 0: Semantic Vulgarity Check (Citizens)
     // ------------------------------------------------------------
+    const fullText = `${title} ${description} ${address || ""}`;
+    const moderation = await checkVulgarity(fullText, req.user.id, req.user.role);
+    if (moderation.isVulgar) {
+      return res.status(403).json({
+        message: moderation.message || "❌ CONTENT BLOCKED: Vulgarity detected in report.",
+        error: "Your account has been flagged for using offensive language.",
+        abuseData: { attempts: moderation.attempts }
+      });
+    }
+
+    // ------------------------------------------------------------
+    // 🛡️ Trigger 1: Fake Image Strike (Citizens Only)
     const supportedAI = ["pothole", "garbage", "streetlight"];
     if (supportedAI.includes(textCategory) && String(isImageAuthentic) === "false") {
        const result = await User.autoWarn(
@@ -470,6 +483,18 @@ router.put("/:id/status", auth(["officer", "admin"]), async (req, res) => {
     // Officer updates
     // ----------------------------
     if (user.role === "officer") {
+      // 🛡️ Semantic Vulgarity Check (Officers)
+      if (comment) {
+        const moderation = await checkVulgarity(comment, user.id, user.role, report._id);
+        if (moderation.isVulgar) {
+          return res.status(403).json({
+            message: moderation.message || "❌ ACTION BLOCKED: Vulgarity detected in your comment.",
+            error: "A critical performance audit has been logged for this behavior.",
+            abuseData: { attempts: moderation.attempts }
+          });
+        }
+      }
+
       let historyLogged = false;
       if (status === "In Progress") {
         const oldStatus = report.status;
