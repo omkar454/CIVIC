@@ -1,82 +1,107 @@
 import torch
-import torchvision.transforms as transforms
-from torchvision.models import resnet18, ResNet18_Weights
-import requests
-from PIL import Image
-from io import BytesIO
 import torch.nn.functional as F
+from transformers import CLIPProcessor, CLIPModel
+import requests
+from PIL import Image, ImageOps
+from io import BytesIO
+import os
+import numpy as np
 
 # ---------------------------------------------------------
-# Feature 4: Officer Work Validation (Siamese Similarity)
+# Feature 4: Officer Work Validation (CLIP + Strict Pixel Audit)
 # ---------------------------------------------------------
 
-print("🔍 Initializing Siamese Validation Engine...")
+print("🔍 Initializing CLIP Vision Validation Engine (Zero-Touch)...")
+
+# Use the same CLIP model as intelligence.py for consistency
+device = "cuda" if torch.cuda.is_available() else "cpu"
 
 try:
-    # A true Siamese network consists of twin networks sharing weights.
-    # Here we use ResNet-18 as the twin backbone to extract feature vectors (embeddings).
-    weights = ResNet18_Weights.DEFAULT
-    backbone = resnet18(weights=weights)
-    
-    # Remove the final classification layer to get the raw 512-dimension embedding vector
-    modules = list(backbone.children())[:-1]
-    siamese_twin = torch.nn.Sequential(*modules)
-    siamese_twin.eval() # Turn off learning mode
-    
-    preprocess = transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-    ])
-    print("✅ Loaded Siamese comparison twin network!")
+    print(f"🔍 Loading CLIP Vision Engine on {device}...", flush=True)
+    model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to(device)
+    processor = CLIPProcessor.from_pretrained("openai/clip-vit-base-patch32")
+    print(f"✅ Loaded CLIP Vision Transformer (Transformers) on {device}!", flush=True)
 except Exception as e:
-    print(f"❌ Failed to load Siamese Network: {e}")
-    siamese_twin = None
+    print(f"❌ Failed to load CLIP Network: {e}", flush=True)
+    model = None
+
+def calculate_pixel_duplicity(img1: Image, img2: Image) -> bool:
+    """
+    Catch literal file duplicates by comparing normalized grayscale grids.
+    Extremely robust against compression and metadata changes.
+    """
+    try:
+        # Resize to tiny 32x32 grayscale grids
+        size = (32, 32)
+        grid1 = np.array(img1.convert("L").resize(size))
+        grid2 = np.array(img2.convert("L").resize(size))
+        
+        # Calculate Mean Squared Error
+        mse = np.mean((grid1 - grid2) ** 2)
+        print(f"🏁 [PIXEL AUDIT] Identity Drift (MSE): {mse:.2f}", flush=True)
+        
+        # Threshold: MSE < 30.0 is unmistakably a duplicate/screenshot attempt
+        is_dub = bool(mse < 30.0)
+        return is_dub
+    except Exception as e:
+        print(f"Pixel Audit Warn: {e}")
+        return False
 
 def get_image_embedding(image_url: str):
+    """
+    Downloads image and extracts a semantic CLIP fingerprint.
+    Returns both the embedding and the raw PIL image for pixel audit.
+    """
     response = requests.get(image_url, timeout=5)
     response.raise_for_status()
-    img = Image.open(BytesIO(response.content)).convert("RGB")
-    tensor = preprocess(img).unsqueeze(0)
     
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    siamese_twin.to(device)
-    tensor = tensor.to(device)
+    img = Image.open(BytesIO(response.content))
+    img = ImageOps.exif_transpose(img).convert("RGB")
+    
+    # Process and MOVE TO DEVICE
+    inputs = processor(images=img, return_tensors="pt").to(device)
     
     with torch.no_grad():
-        embedding = siamese_twin(tensor)
-    return embedding.view(-1) # Flatten to 1D array
+        # Extract features
+        outputs = model.get_image_features(**inputs)
+        
+        # FIX: Unwrap the tensor
+        image_features = outputs.pooler_output if hasattr(outputs, "pooler_output") else outputs
+        
+        # Normalize the embedding
+        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+        
+    return image_features, img
 
 def validate_work_resolution(before_url: str, after_url: str) -> dict:
     """
-    Compares the 'Before' and 'After' photos submitted by an officer.
-    Calculates Cosine Similarity between their structural architectural embeddings.
+    Compares the 'Before' and 'After' photos via CLIP + Strict Pixel Audit.
     """
-    if siamese_twin is None:
-        # If model is offline, we must flag it for manual review (False)
+    if model is None:
         return {"officerValidationPass": False, "similarityScore": 0.0, "status": "AI Offline - Manual Review Required"}
         
     try:
-        vec1 = get_image_embedding(before_url)
-        vec2 = get_image_embedding(after_url)
+        # Get embeddings and raw images
+        vec1, img1 = get_image_embedding(before_url)
+        vec2, img2 = get_image_embedding(after_url)
         
-        # Calculate Cosine Similarity (1 means identical image, 0 means unrelated)
-        similarity = F.cosine_similarity(vec1.unsqueeze(0), vec2.unsqueeze(0)).item()
-        print(f"🧠 [SIAMESE ENGINE] Raw Cosine Similarity Score: {similarity:.3f}")
+        # 1. Strict Pixel Duplicity Check (Fraud Gate)
+        is_strict_duplicate = calculate_pixel_duplicity(img1, img2)
         
-        # In a Civic context, "Before" and "After" photos shouldn't be EXACTLY identical 
-        # (because the pothole was filled!). But they should share environmental structure.
-        # Threshold 0.50 ensures they are in the same physical location while providing more leeway for visual differences post-fixing.
-        passed = similarity >= 0.67
+        # 2. CLIP Semantic Similarity
+        similarity = F.cosine_similarity(vec1, vec2).item()
+        print(f"📊 [CLIP AUDIT] Raw Scene Similarity: {similarity:.4f}", flush=True)
+        
+        # THRESHOLD CALIBRATION:
+        passed = similarity >= 0.55
         
         return {
             "officerValidationPass": passed,
             "similarityScore": round(similarity, 3),
-            "status": "Verified Location" if passed else "Location Mismatch Detected"
+            "isStrictDuplicate": is_strict_duplicate,
+            "status": "Verified Location" if passed else "Low Location Similarity"
         }
         
     except Exception as e:
-        print(f"Siamese Validation Error: {str(e)}")
-        # SECURITY FIX: Default to False (Mismatch) if we can't verify the location.
-        return {"officerValidationPass": False, "similarityScore": 0.0, "status": f"AI Verification Fail: {str(e)}"}
+        print(f"❌ CLIP Validation Error: {str(e)}", flush=True)
+        return {"officerValidationPass": False, "similarityScore": 0.0, "status": f"AI Fail: {str(e)}"}

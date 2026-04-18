@@ -119,16 +119,46 @@ def get_image_embedding(image_source: str) -> list:
         print(f"Image Embedding Error: {e}")
         return []
 
-def calculate_semantic_similarity(vec1: list, vec2: list) -> float:
+def check_civic_relevance(image_url: str, target_category: str) -> bool:
     """
-    Calculates cosine similarity between two embeddings (Text or Image).
+    Checks if an image actually contains civic-related content.
+    Used to catch officers uploading cats, dogs, or memes.
     """
-    if not vec1 or not vec2:
-        return 0.0
-    
+    if clip_model is None or not image_url:
+        return True # Fail safe: assume relevant if model is down
+        
     try:
-        score = util.cos_sim(vec1, vec2).item()
-        return score
+        # Load image
+        response = requests.get(image_url, timeout=5)
+        image = Image.open(BytesIO(response.content)).convert("RGB")
+        
+        # We compare the image against 'Civic' concepts vs 'Inauthentic' concepts
+        labels = [
+            f"a civic issue involving {target_category}",
+            "a street or road environment",
+            "an animal or pet",
+            "a person's face",
+            "a meme or digital text",
+            "unrelated indoor furniture"
+        ]
+        
+        inputs = clip_processor(text=labels, images=image, return_tensors="pt", padding=True)
+        
+        with torch.no_grad():
+            outputs = clip_model(**inputs)
+            logits_per_image = outputs.logits_per_image
+            probs = logits_per_image.softmax(dim=1)
+            
+        # The first two labels are 'Civic'
+        civic_prob = probs[0][0].item() + probs[0][1].item()
+        # The rest are 'Inauthentic'
+        inauthentic_prob = sum(probs[0][2:].tolist())
+        
+        print(f"🕵️ Relevance Audit: Civic={civic_prob:.2f}, Inauthentic={inauthentic_prob:.2f}")
+        
+        # If inauthentic concepts are significantly stronger than civic ones, flag it!
+        return civic_prob > inauthentic_prob
+        
     except Exception as e:
-        print(f"Similarity Calculation Error: {e}")
-        return 0.0
+        print(f"Relevance Check Error: {e}")
+        return True # Fail safe

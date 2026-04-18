@@ -52,9 +52,9 @@ def detect_objects_yolo(image_url: str, text_hint: str = None) -> dict:
 
     target_conf = 0.25
     if text_hint == "pothole":
-        target_conf = 0.35
+        target_conf = 0.45 # Increased from 0.35 to avoid shadows/noise being marked as potholes
     elif text_hint == "garbage":
-        target_conf = 0.08
+        target_conf = 0.20 # Increased from 0.08 for higher precision
 
     try:
         # Run YOLO

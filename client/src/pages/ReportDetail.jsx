@@ -451,7 +451,9 @@ const generateQRCode = async () => {
           siameseData = {
             officerValidationPass: siameseRes.data.officerValidationPass,
             similarityScore: siameseRes.data.similarityScore,
-            officerValidationStatus: siameseRes.data.status
+            officerValidationStatus: siameseRes.data.status,
+            isInauthentic: siameseRes.data.isInauthentic,
+            isStrictDuplicate: siameseRes.data.isStrictDuplicate
           };
           console.log("✅ AI Status:", siameseData.officerValidationStatus);
         } catch (vlErr) {
@@ -626,7 +628,7 @@ const generateQRCode = async () => {
             
             {report.similarityScore !== undefined && report.similarityScore !== null && (
               <div className="flex items-center gap-2 border-l pl-4 border-gray-300 dark:border-gray-600">
-                <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">Siamese Network Confidence:</span>
+                <span className="text-sm font-semibold text-gray-500 uppercase tracking-wider">CLIP Location Match:</span>
                 <span className="text-blue-600 dark:text-blue-400 text-sm font-bold">{(report.similarityScore * 100).toFixed(1)}%</span>
               </div>
             )}

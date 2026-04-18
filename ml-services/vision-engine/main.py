@@ -88,40 +88,75 @@ async def embed_text(request: VisionAnalysisRequest):
     return {"embedding": embedding}
 
 from services.validation import validate_work_resolution
+from services.intelligence import check_civic_relevance
 
 @app.post("/api/vision/validate")
 async def validate_work(request: WorkValidationRequest):
     """
     Validates officer work by comparing before and after images via Siamese Networks.
-    Performs a secondary YOLO check to ensure the problem was actually removed.
+    Implementing Inauthentic Content detection (Cats/Dogs/Memes).
     """
-    # 1. Location Match (Siamese Similarity)
-    print(f"🔄 Starting Siamese Validation for {request.originalClass}...")
+    # 1. Location Match (CLIP Semantic Similarity)
+    print(f"🔄 Starting Zero-Touch Validation for {request.originalClass}...")
     val_status = validate_work_resolution(request.beforeImageUrl, request.afterImageUrl)
-    print(f"📊 Siamese Network Results: Passed={val_status['officerValidationPass']}, Similarity Score={val_status['similarityScore']}, Status='{val_status['status']}'")
+    sim_score = val_status["similarityScore"]
     
-    # 2. Duplicate Photo Check (Extreme Similarity Fraud)
-    if val_status["similarityScore"] > 0.98:
-        print("🚨 FRAUD DETECTED: Officer uploaded a duplicate photo!")
-        val_status["officerValidationPass"] = False
-        val_status["status"] = "Issue Not Resolved (Duplicate Photo Uploaded)"
+    # 2. Duplicate Photo Check (Dual-Gate Fraud Detection)
+    # Gate 1: CLIP Semantic Identity (>0.98)
+    # Gate 2: Strict Pixel Identity (MSE Grid Match)
+    is_pixel_duplicate = val_status.get("isStrictDuplicate", False)
+    print(f"🕵️ [AI ENGINE] Duplicity Check: CLIP={sim_score:.4f}, PixelMatch={is_pixel_duplicate}")
 
-    # 3. Issue Removal Audit (YOLO Scan on After Photo)
-    elif val_status["officerValidationPass"]:
-        print(f"📍 Location Match Success. Auditing {request.originalClass} removal via YOLOv8...")
-        after_cat = detect_objects_yolo(request.afterImageUrl, text_hint=request.originalClass.lower())
-        print(f"👁️ YOLOv8 Detected Objects in After Photo: {after_cat.get('tags', [])}")
-        
-        # Check if the original problem is STILL visible in the "After" photo
-        target = request.originalClass.lower()
-        is_still_there = any(target in tag.lower() for tag in after_cat["tags"])
-        
+    if sim_score > 0.98 or is_pixel_duplicate:
+        print("🚨 FRAUD DETECTED: Officer uploaded a duplicate or near-identical photo!")
+        val_status["officerValidationPass"] = False
+        val_status["status"] = "AI Fraud Alert: Duplicate Photo Uploaded"
+        return val_status
+
+    # 3. Authenticity Check (Civic Relevance)
+    # If similarity is very low, check if it's even a civic issue (e.g. not a cat/dog)
+    is_authentic = True
+    if sim_score < 0.45:
+        print(f"🧐 Low similarity ({sim_score}). Running Civic Relevance Audit...")
+        is_authentic = check_civic_relevance(request.afterImageUrl, request.originalClass)
+        if not is_authentic:
+            print("🚨 INAUTHENTIC CONTENT: Image unrelated to civic infrastructure detected!")
+            val_status["officerValidationPass"] = False
+            val_status["isInauthentic"] = True
+            val_status["status"] = "AI Security Alert: Inauthentic Content Detected"
+            return val_status
+
+    # 4. Issue Removal Audit (YOLO Scan on After Photo)
+    print(f"📍 Location Similarity: {sim_score}. Auditing {request.originalClass} removal via YOLOv8...")
+    after_cat = detect_objects_yolo(request.afterImageUrl, text_hint=request.originalClass.lower())
+    target = request.originalClass.lower()
+    is_still_there = any(target in tag.lower() for tag in after_cat.get("tags", []))
+    
+    # 5. THE ZERO-TOUCH CONSENSUS LOGIC
+    # Rule A: High Similarity (0.55+) -> Auto Pass
+    if sim_score >= 0.55:
         if is_still_there:
-            print(f"⚠️ AUDIT FAIL: {target} still detected in after photo!")
             val_status["officerValidationPass"] = False
             val_status["status"] = f"Incomplete Fix: {target.capitalize()} still detected at location."
         else:
-            print(f"✅ AUDIT PASS: {target} no longer detected in the after photo.")
+            val_status["officerValidationPass"] = True
+            val_status["status"] = "AI Auto-Approved: Verified Location + Issue Removed."
+            
+    # Rule B: Borderline Similarity (0.40 - 0.55) + SUCCESSFUL AUDIT -> Auto Pass
+    elif sim_score >= 0.40 and not is_still_there:
+        val_status["officerValidationPass"] = True
+        val_status["status"] = "AI Consensus Pass: Context match confirmed + Issue Removed."
+        
+    # Rule C: Low Similarity or Audit Fail -> Flag for Admin
+    else:
+        val_status["officerValidationPass"] = False
+        if is_still_there:
+            val_status["status"] = f"Action Required: {target.capitalize()} still visible in proof."
+        else:
+            val_status["status"] = "Manual Review: Low Location Similarity."
+    
+    print(f"📊 Final Consensus: Passed={val_status['officerValidationPass']}, Status='{val_status['status']}'")
+    return val_status
     
     return val_status
 

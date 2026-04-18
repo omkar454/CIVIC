@@ -119,7 +119,6 @@ const UserSchema = new mongoose.Schema(
 // -----------------------------
 // Indexes
 // -----------------------------
-UserSchema.index({ email: 1 }, { unique: true });
 UserSchema.index({ role: 1, department: 1 });
 
 // -----------------------------
@@ -147,7 +146,19 @@ UserSchema.statics.autoWarn = async function (
   if (user.role === "officer") {
     // 👮 Officers: No formal strikes, just Audit Logging for Administration
     isHardStrike = true; // Still mark as Hard Strike so it shows in the Admin's Performance Audit Center
-    message = `🛡️ [ADVISORY]: Unprofessional or Vulgar language detected. Official staff are required to maintain strict professional standards. This incident has been specifically logged for Administrative review.`;
+    
+    // Dynamic Advisory Labels
+    const labels = {
+      "Vulgarity": "Unprofessional or Vulgar language",
+      "FakeImage": "Inauthentic image submission",
+      "FRAUD_ATTEMPT": "Duplicate or Fraudulent photo",
+      "LOCATION_MISMATCH": "Field location mismatch",
+      "INCOMPLETE_WORK": "Incomplete resolution attempt",
+      "DuplicateSpam": "Duplicate or Spam content"
+    };
+    const violationLabel = labels[category] || "Unprofessional conduct";
+
+    message = `🛡️ [ADVISORY]: ${violationLabel} detected. Official staff are required to maintain strict professional standards. This incident has been specifically logged for Administrative review.`;
   } else {
     // 👥 Citizens: 6-Step Sequence Logic
     if (user.abuseAttempts === 3) {
