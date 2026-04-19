@@ -12,19 +12,11 @@ if API_KEY:
 else:
     client = None
 
-def get_human_address(lat, lng):
-    """
-    Utility to convert coordinates to a human-readable address via Nominatim.
-    """
-    try:
-        url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lng}"
-        headers = {"User-Agent": "CivicIssueTracker/1.0"}
-        res = requests.get(url, headers=headers, timeout=5)
-        if res.status_code == 200:
-            return res.json().get("display_name", f"Lat: {lat}, Lng: {lng}")
-    except Exception:
-        pass
-    return f"Lat: {lat}, Lng: {lng}"
+from google import genai
+from dotenv import load_dotenv
+from utils.geo_utils import get_human_address
+
+load_dotenv()
 
 def generate_critical_notice_via_microservice(days_window: int = 90) -> dict:
     """

@@ -12,17 +12,20 @@ import {
   BarChart,
   Bar,
 } from "recharts";
+import ResourceForecastingHub from "./ResourceForecastingHub.jsx";
 
 export default function OfficerAnalytics() {
   const [trends, setTrends] = useState([]);
   const [insights, setInsights] = useState(null);
   const [summary, setSummary] = useState([]);
   const [resourceForecasts, setResourceForecasts] = useState({});
+  const [resourceIntelligence, setResourceIntelligence] = useState(null);
   const [historicalAlerts, setHistoricalAlerts] = useState([]);
   const [selectedAlert, setSelectedAlert] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const token = localStorage.getItem("accessToken");
+  const userDept = localStorage.getItem("department") || "General";
 
   useEffect(() => {
     setLoading(true);
@@ -36,14 +39,19 @@ export default function OfficerAnalytics() {
     const fetchInsights = API.get("/officer/department-insights")
       .then((res) => setInsights(res.data.insights));
 
-    // 3️⃣ Performance Summary (Accurate 1-indexed month)
+    // 3️⃣ Performance Summary
     const fetchSummary = API.get(
         `/officer/performance-summary?period=month&year=${now.getFullYear()}&month=${now.getMonth() + 1}`
       )
       .then((res) => setSummary(res.data.summary || []));
 
-    const fetchForecast = API.get("/ml/resources?historical_days=3650&predict_days_ahead=7", { headers: { Authorization: `Bearer ${token}` } })
-      .then(res => setResourceForecasts(res.data.forecasts || {}));
+    // 4️⃣ Predictive Resource Forecast (Live Weather Sync)
+    const fetchForecast = API.get(`/ml/resources?historical_days=180&predict_days_ahead=7&department=${userDept}`, { 
+        headers: { Authorization: `Bearer ${token}` } 
+    }).then(res => {
+          setResourceForecasts(res.data.forecasts || {});
+          setResourceIntelligence(res.data);
+    });
 
     // 5️⃣ Historical Emergency Alerts
     const fetchAlerts = API.get("/notifications?limit=50")
@@ -55,7 +63,7 @@ export default function OfficerAnalytics() {
     Promise.all([fetchTrends, fetchInsights, fetchSummary, fetchForecast, fetchAlerts])
       .catch((err) => console.error("Officer analytics error:", err))
       .finally(() => setLoading(false));
-  }, [token]);
+  }, [token, userDept]);
 
   if (loading) {
     return (
@@ -66,88 +74,128 @@ export default function OfficerAnalytics() {
     );
   }
 
-  // 🔄 Prepare ML Forecast Data
-  const forecastData = [];
-  if (Object.keys(resourceForecasts).length > 0) {
-    const categories = Object.keys(resourceForecasts);
-    if (categories.length > 0 && resourceForecasts[categories[0]].daily_predictions) {
-       resourceForecasts[categories[0]].daily_predictions.forEach((t, i) => {
-          let dayPoint = { date: t.date.substring(0, 10) };
-          categories.forEach(cat => {
-             if (resourceForecasts[cat].daily_predictions[i]) {
-                dayPoint[cat] = Math.max(0, resourceForecasts[cat].daily_predictions[i].predicted_volume);
-             }
-          });
-          forecastData.push(dayPoint);
-       });
-    }
-  }
-
   return (
     <div className="mt-10 space-y-6">
       <h2 className="text-2xl font-bold mb-4 text-gray-800 dark:text-gray-200">
         🧭 Officer Department Analytics
       </h2>
 
-      {/* 🔮 Predictive Demand Forecasting (Department Only) */}
-      {forecastData.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-900 border border-blue-100 dark:border-gray-700 p-4 rounded-xl shadow">
-            <h3 className="text-lg font-bold mb-1 text-blue-900 dark:text-blue-300">
-              🔮 Your 7-Day Resource Demand Forecast
-            </h3>
-            <p className="text-xs text-gray-500 mb-4 italic">Powered by Facebook Prophet ML Algorithm</p>
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={forecastData}>
-                <XAxis dataKey="date" tick={{fontSize: 12}} />
-                <YAxis />
-                <Tooltip wrapperStyle={{ borderRadius: '8px' }} />
-                <Legend />
-                {Object.keys(resourceForecasts).map((dept, idx) => (
-                    <Line
-                      key={`forecast-${dept}`}
-                      type="monotone"
-                      dataKey={dept}
-                      stroke="#10B981" // Single distinct color for their department
-                      strokeWidth={4}
-                      strokeDasharray="5 5"
-                      dot={{ r: 5 }}
-                      activeDot={{ r: 9 }}
-                      name={dept.toUpperCase()}
-                    />
-                ))}
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+      {/* 🔮 Predictive Demand Forecasting (Unified Intelligence Hub) */}
+      {resourceForecasts && Object.keys(resourceForecasts).length > 0 && (
+         <div className="mb-12 border-t-2 border-slate-100 dark:border-gray-800 pt-12">
+            <ResourceForecastingHub 
+               forecastData={resourceForecasts} 
+               resourceData={resourceIntelligence?.resource_requirements || {}}
+               weatherMetadata={resourceIntelligence?.weather_metadata || []}
+               selectedDept={userDept}
+               onDeptChange={() => {}} // Officers are locked to their own department
+               availableDepts={[userDept]}
+               role="officer"
+            />
+         </div>
+      )}
 
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* 🚨 Emergency Alert History Column */}
-          <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-red-100 dark:border-red-900/30">
+          <div className="lg:col-span-1 bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-red-100 dark:border-red-900/30">
              <h3 className="text-sm font-black text-red-600 mb-4 flex items-center gap-2 uppercase tracking-widest">
                 <span>🚨</span> Dispatch History
              </h3>
-             <div className="space-y-3 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                {historicalAlerts.length === 0 ? (
-                  <p className="text-xs text-gray-400 italic">No critical dispatches on record for your department.</p>
+             <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                {historicalAlerts && historicalAlerts.length === 0 ? (
+                   <p className="text-xs text-gray-400 italic">No critical dispatches on record for your department.</p>
                 ) : (
-                  historicalAlerts.map(alert => (
-                    <button 
-                      key={alert._id}
-                      onClick={() => setSelectedAlert(alert)}
-                      className="w-full text-left p-3 rounded-lg border border-gray-100 dark:border-gray-700 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors group"
-                    >
-                       <p className="text-[10px] text-gray-400 font-bold mb-1 uppercase italic">
-                         {new Date(alert.createdAt).toLocaleDateString()}
-                       </p>
-                       <p className="text-xs font-black text-gray-800 dark:text-gray-200 group-hover:text-red-600 line-clamp-2">
-                         {alert.message}
-                       </p>
-                    </button>
-                  ))
+                   historicalAlerts?.map(alert => (
+                     <button 
+                       key={alert._id}
+                       onClick={() => setSelectedAlert(alert)}
+                       className="w-full text-left p-3 rounded-lg border border-gray-100 dark:border-gray-700 hover:bg-red-50 dark:hover:bg-red-900/10 transition-colors group"
+                     >
+                        <p className="text-[10px] text-gray-400 font-bold mb-1 uppercase italic">
+                          {new Date(alert.createdAt).toLocaleDateString()}
+                        </p>
+                        <p className="text-xs font-black text-gray-800 dark:text-gray-200 group-hover:text-red-600 line-clamp-2">
+                          {alert.message}
+                        </p>
+                     </button>
+                   ))
                 )}
              </div>
           </div>
-        </div>
-      )}
+
+          {/* 1️⃣ Complaint Trends (Line Chart) */}
+          <div className="lg:col-span-3">
+              {trends.length > 0 && (
+                <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-gray-100 dark:border-gray-700 h-full">
+                  <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
+                    Complaint Trends (Last 6 Months)
+                  </h3>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={trends}>
+                      <XAxis dataKey="month" />
+                      <YAxis />
+                      <Tooltip />
+                      <Legend />
+                      <Line type="monotone" dataKey="total" stroke="#FF9800" name="Total" strokeWidth={2} />
+                      <Line type="monotone" dataKey="resolved" stroke="#4CAF50" name="Resolved" strokeWidth={2} />
+                      <Line type="monotone" dataKey="rejected" stroke="#E53935" name="Rejected" strokeDasharray="5 5" />
+                      <Line type="monotone" dataKey="inProgress" stroke="#2196F3" name="In Progress" strokeWidth={2} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+          </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* 2️⃣ Department Insights */}
+          {insights && (
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-gray-100 dark:border-gray-700">
+              <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
+                {insights.department ? (insights.department.charAt(0).toUpperCase() + insights.department.slice(1)) : "Department"}
+                {" "}Insights
+              </h3>
+              <div className="grid grid-cols-2 gap-4 text-center text-gray-700 dark:text-gray-200 py-4">
+                <div className="bg-gray-50 dark:bg-gray-900/50 p-3 rounded-xl">
+                  <p className="text-[10px] uppercase font-bold text-gray-400">Total Reports</p>
+                  <p className="text-2xl font-black">{insights.totalReports}</p>
+                </div>
+                <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-xl">
+                  <p className="text-[10px] uppercase font-bold text-green-600">Resolved</p>
+                  <p className="text-2xl font-black text-green-500">{insights.resolved}</p>
+                </div>
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-xl">
+                  <p className="text-[10px] uppercase font-bold text-blue-600">Efficiency</p>
+                  <p className="text-2xl font-black text-blue-500">{insights.efficiencyPct.toFixed(1)}%</p>
+                </div>
+                <div className="bg-orange-50 dark:bg-orange-900/20 p-3 rounded-xl">
+                  <p className="text-[10px] uppercase font-bold text-orange-600">Avg Resolution</p>
+                  <p className="text-2xl font-black text-orange-500">{insights.avgResolutionDays.toFixed(1)}d</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 3️⃣ Monthly Summary */}
+          {summary.length > 0 && (
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-gray-100 dark:border-gray-700">
+              <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
+                Monthly Performance Summary
+              </h3>
+              <ResponsiveContainer width="100%" height={250}>
+                <BarChart data={summary}>
+                  <XAxis dataKey="period" />
+                  <YAxis />
+                  <Tooltip />
+                  <Legend />
+                  <Bar dataKey="total" fill="#FF9800" name="Total Reports" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="resolved" fill="#4CAF50" name="Resolved" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="rejected" fill="#E53935" name="Rejected" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+      </div>
 
       {/* 🛑 HISTORY MODAL FOR SELECTED ALERT */}
       {selectedAlert && (
@@ -165,101 +213,6 @@ export default function OfficerAnalytics() {
                 </div>
             </div>
          </div>
-      )}
-
-      {/* 1️⃣ Complaint Trends (Line Chart) */}
-      {trends.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-gray-100 dark:border-gray-700">
-          <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
-            Complaint Trends (Last 6 Months)
-          </h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <LineChart data={trends}>
-              <XAxis dataKey="month" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Line
-                type="monotone"
-                dataKey="total"
-                stroke="#FF9800"
-                name="Total"
-              />
-              <Line
-                type="monotone"
-                dataKey="resolved"
-                stroke="#4CAF50"
-                name="Resolved"
-              />
-              <Line
-                type="monotone"
-                dataKey="rejected"
-                stroke="#E53935"
-                name="Rejected"
-              />
-              <Line
-                type="monotone"
-                dataKey="inProgress"
-                stroke="#2196F3"
-                name="In Progress"
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {/* 2️⃣ Department Insights */}
-      {insights && (
-        <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-gray-100 dark:border-gray-700">
-          <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
-            {insights.department ? (insights.department.charAt(0).toUpperCase() + insights.department.slice(1)) : "Department"}
-            {" "}Insights
-          </h3>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-center text-gray-700 dark:text-gray-200">
-            <div>
-              <p className="text-sm">Total Reports</p>
-              <p className="text-xl font-bold">{insights.totalReports}</p>
-            </div>
-            <div>
-              <p className="text-sm">Resolved</p>
-              <p className="text-xl font-bold text-green-500">
-                {insights.resolved}
-              </p>
-            </div>
-            <div>
-              <p className="text-sm">Efficiency</p>
-              <p className="text-xl font-bold text-blue-500">
-                {insights.efficiencyPct.toFixed(1)}%
-              </p>
-            </div>
-            <div>
-              <p className="text-sm">Avg Resolution Time</p>
-              <p className="text-xl font-bold text-orange-500">
-                {insights.avgResolutionDays.toFixed(1)} days
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 3️⃣ Monthly Summary */}
-      {summary.length > 0 && (
-        <div className="bg-white dark:bg-gray-800 p-4 rounded-xl shadow border border-gray-100 dark:border-gray-700">
-          <h3 className="text-lg font-semibold mb-3 text-gray-800 dark:text-gray-200">
-            Monthly Performance Summary
-          </h3>
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={summary}>
-              <XAxis dataKey="period" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="total" fill="#FF9800" name="Total Reports" />
-              <Bar dataKey="resolved" fill="#4CAF50" name="Resolved" />
-              <Bar dataKey="rejected" fill="#E53935" name="Rejected" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
       )}
     </div>
   );

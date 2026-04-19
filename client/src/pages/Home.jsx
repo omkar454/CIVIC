@@ -12,6 +12,7 @@ import CitizenAnalytics from "../components/CitizenAnalytics.jsx";
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import AccountHealth from "../components/AccountHealth.jsx";
+import ResourceForecastingHub from "../components/ResourceForecastingHub.jsx";
 
 // Recharts
 import {
@@ -83,9 +84,11 @@ export default function Home() {
   const [userData, setUserData] = useState(null);
   const [hotspots, setHotspots] = useState([]);
   const [predictions, setPredictions] = useState([]);
+  const [resourceIntelligence, setResourceIntelligence] = useState({ forecasts: {}, resource_requirements: {} });
   const [emergencyAlerts, setEmergencyAlerts] = useState([]);
   const [showEmergencyModal, setShowEmergencyModal] = useState(false);
   const [activeAlert, setActiveAlert] = useState(null);
+  const [selectedResourceDept, setSelectedResourceDept] = useState("General");
   const [selectedStatuses, setSelectedStatuses] = useState(["Open", "Acknowledged", "In Progress"]);
   const [adminPage, setAdminPage] = useState(1);
   const itemsPerPage = 3;
@@ -180,6 +183,18 @@ useEffect(() => {
         const p = await axios.get(`http://localhost:5000/api/ml/infrastructure?days=3650`, { headers: { Authorization: `Bearer ${token}` } });
         setPredictions(p.data?.predictions || []);
       } catch (err) { console.warn("Predictive fetch failed", err); }
+
+      // 🏦 Fetch Resource Intelligence & 30-Day Forecasts (Module 5)
+      if (role === "admin" || role === "officer") {
+        try {
+          const deptParam = role === "admin" ? selectedResourceDept : userDepartment;
+          const res = await axios.get(`http://localhost:5000/api/ml/resources?historical_days=180&predict_days_ahead=7&department=${deptParam}`, { 
+            headers: { Authorization: `Bearer ${token}` },
+            timeout: 30000 // 🚀 Increased to 30s for heavy City-Wide aggregation
+          });
+          if (res.data && res.data.forecasts) setResourceIntelligence(res.data);
+        } catch (err) { console.warn("Resource Intelligence Service unreachable via Proxy", err); }
+      }
       
       // Fetch Emergency Alerts for Officers
       if (role === "officer") {
@@ -594,6 +609,37 @@ useEffect(() => {
                 </Circle>
               );
             })}
+
+            {/* AI Predictive Risk Zones (Module 5 Weather Intelligence) */}
+            {(role === "admin" || role === "officer") && Object.values(resourceIntelligence.forecasts).map((f, fIdx) => (
+               f.geospatial_risk_attribution?.map((zone, zIdx) => {
+                  const isCriticalSpike = f.daily_predictions?.some(p => p.is_spike && p.date === f.daily_predictions[0]?.date);
+                  return (
+                    <Circle
+                      key={`risk-zone-${fIdx}-${zIdx}`}
+                      center={[zone.lat, zone.lng]}
+                      radius={1200} // Broad risk area
+                      pathOptions={{ 
+                        color: isCriticalSpike ? '#ef4444' : '#f97316', 
+                        fillColor: isCriticalSpike ? '#ef4444' : '#f97316', 
+                        fillOpacity: 0.1, 
+                        weight: 2,
+                        dashArray: '10, 10'
+                      }}
+                      className="animate-pulse"
+                    >
+                      <Popup>
+                        <div className="text-center p-1">
+                          <p className="text-[10px] font-black uppercase text-orange-600">Predicted Risk Zone</p>
+                          <h4 className="font-bold text-sm">{zone.address}</h4>
+                          <p className="text-xs text-gray-500 mt-1">AI Vulnerability Score: <b>{zone.risk_score.toFixed(1)}</b></p>
+                          {isCriticalSpike && <p className="text-[10px] font-black bg-red-100 text-red-600 mt-2 py-1 rounded">⚠️ SPIKE PREDICTED</p>}
+                        </div>
+                      </Popup>
+                    </Circle>
+                  );
+               })
+            ))}
           </MapContainer>
           <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">
             Only geocoded reports contribute to the heatmap; redder areas
@@ -693,6 +739,21 @@ useEffect(() => {
           </div>
         </div>
       </div>
+
+      {/* 🚀 AI-Driven Resource Integration Hub (Module 5) */}
+      {(role === "admin" || role === "officer") && (
+        <div className="mb-12 border-t-2 border-slate-100 dark:border-gray-800 pt-12">
+           <ResourceForecastingHub 
+              forecastData={resourceIntelligence.forecasts} 
+              resourceData={resourceIntelligence.resource_requirements}
+              weatherMetadata={resourceIntelligence.weather_metadata}
+              selectedDept={selectedResourceDept}
+              onDeptChange={setSelectedResourceDept}
+              availableDepts={["General", ...new Set(reports.map(r => r.category).filter(Boolean))]}
+              role={role}
+           />
+        </div>
+      )}
 
       {/* Role-specific Analytics Section (Admin, Officer, Citizen) */}
       {/* ---------------- Role-specific Sections ---------------- */}

@@ -58,10 +58,14 @@ router.get("/infrastructure", auth(["admin", "officer"]), async (req, res) => {
 // GET /api/ml/resources
 router.get("/resources", auth(["admin", "officer"]), async (req, res) => {
   try {
-    const { historical_days, predict_days_ahead } = req.query;
+    const { historical_days, predict_days_ahead, department } = req.query;
     const params = { historical_days, predict_days_ahead };
 
-    if (req.user.role === "officer" && req.user.department) {
+    // 🎯 Priority: If a specific department is requested in query, use it.
+    // Otherwise, if an officer is logged in, use their assigned department.
+    if (department) {
+        params.department = department;
+    } else if (req.user.role === "officer" && req.user.department) {
         params.department = req.user.department;
     }
 
