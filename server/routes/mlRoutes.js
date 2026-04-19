@@ -1,14 +1,17 @@
 import express from "express";
 import axios from "axios";
+import multer from "multer";
 import auth from "../middleware/auth.js";
 import User from "../models/User.js";
 import Notification from "../models/Notification.js";
 
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Configuration for local Python microservices
 const MICROSERVICE_HOTSPOT_URL = "http://localhost:8002";
 const MICROSERVICE_FORECAST_URL = "http://localhost:8003";
+const MICROSERVICE_TRANSCRIPTION_URL = "http://localhost:8005";
 
 /* -------------------------------------------------------------
  * 1️⃣ MODULE 4: Spatial Analytics & Hotspot Detection Proxy
@@ -131,6 +134,36 @@ router.post("/dispatch-alert", auth(["admin"]), async (req, res) => {
   } catch (error) {
     console.error("Dispatch Alert Error:", error.message);
     res.status(500).json({ error: "Failed to dispatch alert notifications." });
+  }
+});
+
+/* -------------------------------------------------------------
+ * 3️⃣ MODULE 6: Transcription Service Proxy
+ * ------------------------------------------------------------- */
+
+// POST /api/ml/transcribe
+router.post("/transcribe", auth(["admin", "officer", "citizen"]), upload.single("audio"), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: "No audio file provided." });
+    }
+    
+    // Create native FormData (Node 18+)
+    const blob = new Blob([req.file.buffer], { type: req.file.mimetype });
+    const formData = new FormData();
+    formData.append("audio", blob, req.file.originalname || "audio.wav");
+    
+    // Axios v1.x handles native FormData automatically
+    const response = await axios.post(`${MICROSERVICE_TRANSCRIPTION_URL}/api/transcribe`, formData, {
+      headers: {
+        "Content-Type": "multipart/form-data" // Often not strictly necessary with FormData but good for clarity
+      }
+    });
+
+    res.json(response.data);
+  } catch (error) {
+    console.error("ML Proxy Error (/api/ml/transcribe):", error.response?.data || error.message);
+    res.status(502).json({ error: "Transcription Service is currently unreachable or encountered an error." });
   }
 });
 

@@ -1,5 +1,5 @@
 // src/pages/ReportForm.jsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import {
@@ -161,6 +161,14 @@ export default function ReportForm() {
   const [existingReports, setExistingReports] = useState([]);
   const [locationOption, setLocationOption] = useState("map");
 
+  // Voice-to-Text States
+  const [recordingStatus, setRecordingStatus] = useState("idle"); // idle, recording, transcribing
+  const [timeLeft, setTimeLeft] = useState(20);
+  const [detectedLanguage, setDetectedLanguage] = useState("");
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const timerRef = useRef(null);
+
   const navigate = useNavigate();
   const token = localStorage.getItem("accessToken");
 
@@ -213,6 +221,77 @@ export default function ReportForm() {
       );
     }
   }, [locationOption]);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      setDetectedLanguage("");
+
+      mediaRecorderRef.current.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorderRef.current.onstop = async () => {
+        setRecordingStatus("transcribing");
+        const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+        const formData = new FormData();
+        formData.append("audio", audioBlob, "recording.webm");
+
+        try {
+          const res = await axios.post("http://localhost:5000/api/ml/transcribe", formData, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          
+          if (res.data.success && res.data.text) {
+            setForm(prev => ({
+              ...prev,
+              description: prev.description 
+                ? `${prev.description} ${res.data.text}`
+                : res.data.text
+            }));
+            if (res.data.language) {
+              setDetectedLanguage(res.data.language);
+            }
+          }
+        } catch (error) {
+          console.error("Transcription error:", error);
+          setError("Transcription failed. Please try again or type manually.");
+        } finally {
+          setRecordingStatus("idle");
+          stream.getTracks().forEach(track => track.stop());
+        }
+      };
+
+      mediaRecorderRef.current.start();
+      setRecordingStatus("recording");
+      setTimeLeft(20);
+      
+      timerRef.current = setInterval(() => {
+        setTimeLeft((prev) => {
+          if (prev <= 1) {
+            stopRecording();
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+    } catch (err) {
+      console.error("Microphone Access Error:", err);
+      setError("Microphone access denied. Please check permissions to use voice reporting.");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+      mediaRecorderRef.current.stop();
+      clearInterval(timerRef.current);
+    }
+  };
 
   const handleChange = (e) =>
     setForm({ ...form, [e.target.name]: e.target.value });
@@ -424,18 +503,56 @@ export default function ReportForm() {
           </div>
 
           {/* Description */}
-          <div>
-            <label className="block text-sm font-medium mb-1">
-              Description
-            </label>
-            <textarea
-              name="description"
-              value={form.description}
-              onChange={handleChange}
-              placeholder="Detailed description of the problem"
-              className="w-full border rounded px-3 py-2 h-24 focus:outline-none focus:ring focus:ring-blue-400 dark:bg-gray-700 dark:text-white"
-              required
-            />
+          <div className="relative">
+            <div className="flex justify-between items-end mb-1">
+              <label className="block text-sm font-medium">Description</label>
+              
+              {/* Voice-to-Text Status & Controls */}
+              <div className="flex items-center gap-3">
+                {detectedLanguage && (
+                  <span className="text-[10px] bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300 px-2 py-0.5 rounded shadow-sm font-bold tracking-wide uppercase">
+                    Lang: {detectedLanguage}
+                  </span>
+                )}
+                {recordingStatus === "recording" && (
+                  <div className="flex items-center gap-2">
+                    <span className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                    </span>
+                    <span className="text-xs text-red-500 font-bold animate-pulse">00:{timeLeft.toString().padStart(2, '0')}</span>
+                    <button type="button" onClick={stopRecording} className="text-[10px] font-bold uppercase tracking-wider bg-red-100 text-red-600 px-2 py-1 rounded hover:bg-red-200 transition">Stop</button>
+                  </div>
+                )}
+                {recordingStatus === "transcribing" && (
+                  <span className="text-xs text-blue-500 font-bold animate-pulse">Transcribing...</span>
+                )}
+              </div>
+            </div>
+            
+            <div className="relative">
+              <textarea
+                name="description"
+                value={form.description}
+                onChange={handleChange}
+                placeholder="Detailed description of the problem"
+                className="w-full border rounded-lg px-3 py-2 h-24 focus:outline-none focus:ring focus:ring-blue-400 dark:bg-gray-700 dark:text-white"
+                required
+              />
+              {/* Mic Button */}
+              {recordingStatus === "idle" && (
+                <button
+                  type="button"
+                  onClick={startRecording}
+                  className="absolute bottom-3 right-3 text-gray-500 hover:text-blue-600 bg-gray-100 hover:bg-blue-50 dark:bg-gray-600 dark:hover:bg-blue-900/30 p-2 rounded-full transition-all shadow-sm active:scale-95 border border-gray-200 dark:border-gray-500"
+                  title="Use Voice-to-Text"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
+                  </svg>
+                </button>
+              )}
+            </div>
           </div>
 
 

@@ -24,3 +24,4 @@ prophet
 google-genai
 pinecone
 pinecone-client
+openai-whisper
