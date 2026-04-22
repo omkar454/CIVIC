@@ -19,11 +19,37 @@ from pydantic import BaseModel, Field
 from typing import Optional
 from dotenv import load_dotenv
 
-load_dotenv()
-
 from embedding import build_embedding_text, generate_embedding, generate_embeddings_batch
 from db import get_pinecone_index, get_reports_collection, fetch_reports_by_ids
 from moderation import scan_vulgarity
+import google.generativeai as genai
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from typing import Optional
+from dotenv import load_dotenv
+# ─── Configuration & API Keys ─────────────────────────────────────────────
+# 1. Load local .env
+load_dotenv()
+
+# 2. Fallback: Load server/.env to share configurations (like GEMINI_API_KEY_URL)
+server_env_path = os.path.join(os.path.dirname(__file__), "..", "..", "server", ".env")
+if os.path.exists(server_env_path):
+    load_dotenv(server_env_path)
+
+# Configure Gemini
+api_key = os.getenv("GEMINI_API_KEY")
+if not api_key:
+    # Extract from GEMINI_API_KEY_URL if present
+    gemini_url = os.getenv("GEMINI_API_KEY_URL", "")
+    if "key=" in gemini_url:
+        api_key = gemini_url.split("key=")[-1].split("&")[0]
+
+if api_key:
+    genai.configure(api_key=api_key)
+else:
+    logging.warning("⚠️ No Gemini API Key found. Summarization will fail.")
+
+
 
 # ─── Logging Setup ───────────────────────────────────────────────────────
 
@@ -144,6 +170,68 @@ async def scan_vulgarity_endpoint(req: ModerationRequest):
     """
     result = scan_vulgarity(req.text, req.threshold)
     return result
+
+
+@app.get("/summarize/{complaint_id}")
+async def summarize_complaint(complaint_id: str):
+    """
+    Summarize a complaint using Gemini AI.
+    """
+    try:
+        from bson import ObjectId
+        collection = get_reports_collection()
+        
+        try:
+            obj_id = ObjectId(complaint_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid complaint ID format")
+            
+        doc = collection.find_one({"_id": obj_id})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Complaint not found")
+            
+        if doc.get("summary"):
+            return {"summary": doc["summary"]}
+            
+        # Prepare text for summarization
+        title = doc.get("title", "")
+        desc = doc.get("description", "")
+        cat = doc.get("category", "")
+        loc = doc.get("address", "")
+        sev = doc.get("severity", "")
+        dept = doc.get("department", "")
+        
+        text_to_summarize = f"Title: {title}\nDescription: {desc[:2000]}\nCategory: {cat}\nLocation: {loc}\nSeverity: {sev}\nDepartment: {dept}"
+        
+        prompt = f"""You are an assistant for a civic issue tracking system.
+Summarize the complaint using the exact structure below. Do NOT use any markdown formatting (no asterisks, no bold text).
+
+Issue type: [Type]
+Location: [Complete Address]
+Department: [Department]
+Severity: [Severity Level]
+Problem: [1-2 lines]
+
+Keep the response concise and under 60 words.
+
+Complaint Details:
+{text_to_summarize}"""
+        
+        model = genai.GenerativeModel("gemini-flash-latest")
+        response = model.generate_content(prompt)
+        summary_text = response.text.strip().replace("**", "").replace("*", "")
+        
+        # Save back to MongoDB
+        collection.update_one({"_id": obj_id}, {"$set": {"summary": summary_text}})
+        
+        return {"summary": summary_text}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Summarize error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate summary")
+
 
 
 @app.post("/embed-store")

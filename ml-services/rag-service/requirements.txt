@@ -7,3 +7,4 @@ dnspython
 python-dotenv
 numpy
 requests
+google-generativeai

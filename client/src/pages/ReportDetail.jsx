@@ -247,6 +247,10 @@ export default function ReportDetail() {
   const [qrCodeUrl, setQrCodeUrl] = useState(null);
   const [showSecurityModal, setShowSecurityModal] = useState(false);
   const [securityData, setSecurityData] = useState(null);
+  
+  // Summarization State
+  const [summaryText, setSummaryText] = useState("");
+  const [summarizing, setSummarizing] = useState(false);
 
   const availableStatuses = [
     "Open",
@@ -506,6 +510,25 @@ const generateQRCode = async () => {
     }
   };
 
+  // ------------------ Summarize Complaint ------------------
+  const handleSummarize = async () => {
+    setSummarizing(true);
+    try {
+      // Assuming rag-service is running on 8004
+      const res = await axios.get(`http://localhost:8004/summarize/${id}`);
+      if (res.data && res.data.summary) {
+        setSummaryText(res.data.summary);
+      } else {
+        setSummaryText("Failed to generate summary. Try again.");
+      }
+    } catch (err) {
+      console.error("Summarize error:", err);
+      setSummaryText("Failed to generate summary. Make sure RAG service is running.");
+    } finally {
+      setSummarizing(false);
+    }
+  };
+
   // ------------------ UI ------------------
   if (loading)
     return (
@@ -581,8 +604,43 @@ const generateQRCode = async () => {
             </Button>
           </div>
         </div>
-        <p className="text-gray-700 dark:text-gray-300">{report.description}</p>
-        <p className="text-sm text-gray-500">
+        
+        {/* Description & Summarize */}
+        <div className="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
+          <div className="flex justify-between items-start gap-4">
+            <p className="text-gray-700 dark:text-gray-300 flex-1 whitespace-pre-wrap">{report.description}</p>
+            <Button
+              onClick={handleSummarize}
+              disabled={summarizing}
+              variant="outline"
+              className="whitespace-nowrap flex items-center gap-2 border-blue-200 text-blue-700 hover:bg-blue-50 dark:border-blue-800 dark:text-blue-400 dark:hover:bg-blue-900/30"
+              size="sm"
+            >
+              {summarizing ? (
+                <>
+                  <span className="animate-spin text-lg">⚙️</span> Summarizing...
+                </>
+              ) : (
+                <>
+                  <span className="text-lg">✨</span> Summarize
+                </>
+              )}
+            </Button>
+          </div>
+          
+          {(summaryText || report.summary) && !summarizing && (
+            <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border-l-4 border-blue-500 rounded-r-lg animate-in fade-in slide-in-from-top-2">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-blue-600 dark:text-blue-400 font-bold text-xs uppercase tracking-wider">AI Summary</span>
+              </div>
+              <p className="text-sm text-gray-800 dark:text-gray-200 whitespace-pre-line">
+                {summaryText || report.summary}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <p className="text-sm text-gray-500 mt-2">
           Reported by: {report.reporter?.name || "Unknown"} (
           {report.reporter?.email || "N/A"}) |{" "}
           {new Date(report.createdAt).toLocaleString()}
