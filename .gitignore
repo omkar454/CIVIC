@@ -15,6 +15,9 @@ server/uploads/
 
 # 🧠 AI & Machine Learning
 ml-services/rag-service/models/
+ml-services/vision-engine/*.jpg
+ml-services/vision-engine/*.jpeg
+ml-services/vision-engine/*.png
 # Allowing the ENTIRE runs directory as requested
 !ml-services/vision-engine/runs/
 !runs/
