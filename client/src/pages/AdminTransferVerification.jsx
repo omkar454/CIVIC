@@ -1,6 +1,7 @@
 // src/pages/AdminTransferVerification.jsx
 import { useEffect, useState } from "react";
 import API from "../services/api";
+import VoiceToText from "../components/VoiceToText";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { Card, CardContent } from "../components/ui/card";
@@ -248,7 +249,17 @@ export default function AdminTransferVerification() {
               {/* Admin Note */}
               <div className="space-y-3 mt-3">
                 <div>
-                  <label className="font-medium mr-2">Verification Note:</label>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="font-medium mr-2">Verification Note:</label>
+                    <VoiceToText 
+                      onTranscription={(text) => {
+                        setAdminNotes(prev => ({
+                          ...prev,
+                          [t._id]: prev[t._id] ? `${prev[t._id]} ${text}` : text
+                        }));
+                      }}
+                    />
+                  </div>
                   <textarea
                     placeholder="Enter verification note..."
                     className="w-full border p-2 rounded dark:bg-gray-700 dark:text-white"

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import VoiceToText from "./VoiceToText";
 
 function ChatBot({ userRole = "public", token = null }) {
   const [namespaceContext, setNamespaceContext] = useState(null);
@@ -328,15 +329,21 @@ useEffect(() => {
 
       {/* Input */}
       <div className="p-4 bg-gray-800 border-t border-gray-700 flex items-center gap-2">
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyPress={handleKeyPress}
-          placeholder="Ask about CIVIC platform..."
-          disabled={loading}
-          className="flex-1 bg-gray-700 border border-gray-600 text-white placeholder-gray-400 rounded-full px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-        />
+        <div className="flex-1 flex items-center bg-gray-700 border border-gray-600 rounded-full px-2 py-1 focus-within:ring-2 focus-within:ring-purple-500">
+          <VoiceToText 
+            onTranscription={(text) => setInput(prev => prev ? `${prev} ${text}` : text)}
+            className="ml-1"
+          />
+          <input
+            type="text"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyPress={handleKeyPress}
+            placeholder="Ask about CIVIC platform..."
+            disabled={loading}
+            className="flex-1 bg-transparent border-none text-white placeholder-gray-400 px-2 py-2 text-sm focus:outline-none"
+          />
+        </div>
         <button
           onClick={() => sendMessage()}
           disabled={loading || !input.trim()}

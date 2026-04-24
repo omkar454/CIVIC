@@ -7,6 +7,7 @@ import { Badge } from "../components/ui/badge";
 import { Card, CardContent } from "../components/ui/card";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
+import VoiceToText from "../components/VoiceToText";
 
 // Red marker icon
 const redIcon = new L.Icon({
@@ -443,7 +444,17 @@ export default function AdminVerification() {
             {/* Severity and Admin Note */}
             <div className="space-y-3 mt-3">
               <div>
-                <label className="font-medium mr-2">Verification Note:</label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="font-medium mr-2">Verification Note:</label>
+                  <VoiceToText 
+                    onTranscription={(text) => {
+                      setAdminNotes(prev => ({
+                        ...prev,
+                        [report._id]: prev[report._id] ? `${prev[report._id]} ${text}` : text
+                      }));
+                    }}
+                  />
+                </div>
                 <textarea
                   placeholder="Enter verification note..."
                   className="w-full border p-2 rounded dark:bg-gray-700 dark:text-white"

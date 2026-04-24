@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
+import VoiceToText from "./VoiceToText";
 import { Send, Paperclip, X, Image as ImageIcon, User, ShieldCheck } from "lucide-react";
 import { Button } from "./ui/button";
 import SecurityBlockModal from "./SecurityBlockModal";
@@ -215,7 +216,7 @@ export default function OfficerMessenger({ officerId, isAdminView }) {
               value={input}
               onChange={(e) => setInput(e.target.value)}
               placeholder={isAdminView ? "Enter command or feedback..." : "Message admin or report AI mismatch..."}
-              className="w-full bg-slate-50 dark:bg-gray-700 border border-slate-200 dark:border-gray-600 rounded-2xl py-3 px-4 pr-12 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white resize-none max-h-32 min-h-[48px]"
+              className="w-full bg-slate-50 dark:bg-gray-700 border border-slate-200 dark:border-gray-600 rounded-2xl py-3 px-4 pr-20 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:text-white resize-none max-h-32 min-h-[48px]"
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
                   e.preventDefault();
@@ -223,10 +224,13 @@ export default function OfficerMessenger({ officerId, isAdminView }) {
                 }
               }}
             />
-            <label className="absolute right-3 bottom-3 text-slate-400 hover:text-blue-500 cursor-pointer p-1 rounded-full transition hover:bg-slate-100 dark:hover:bg-gray-600">
-              <input type="file" multiple className="hidden" onChange={handleFileChange} accept="image/*" />
-              <Paperclip size={20} />
-            </label>
+            <div className="absolute right-2 bottom-2 flex gap-1">
+              <VoiceToText onTranscription={(text) => setInput((prev) => prev ? `${prev} ${text}` : text)} />
+              <label className="text-slate-400 hover:text-blue-500 cursor-pointer p-1 rounded-full transition hover:bg-slate-100 dark:hover:bg-gray-600">
+                <input type="file" multiple className="hidden" onChange={handleFileChange} accept="image/*" />
+                <Paperclip size={20} />
+              </label>
+            </div>
           </div>
           <Button 
             disabled={uploading || (!input.trim() && attachments.length === 0)}

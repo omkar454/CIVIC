@@ -7,6 +7,7 @@ import { Badge } from "../components/ui/badge";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import SecurityBlockModal from "../components/SecurityBlockModal";
+import VoiceToText from "../components/VoiceToText";
 
 // Red marker icon
 const redIcon = new L.Icon({
@@ -42,7 +43,9 @@ function SLASection({ report }) {
   if (!start) return null;
 
   const totalMs = (report.slaDays || 0) * 24 * 60 * 60 * 1000;
-  const stop = report.status === "Resolved" || report.status === "Rejected";
+  const isResolved = report.status === "Resolved";
+  const isRejected = report.status === "Rejected";
+  const stop = isResolved || isRejected;
   const isPaused = !!report.pendingStatus;
 
   const calculateRemaining = () => {
@@ -102,15 +105,19 @@ function SLASection({ report }) {
       <div className="flex items-center justify-between mt-1">
         <p
           className={`font-semibold text-lg ${
-            stop
+            isResolved
               ? "text-green-600 dark:text-green-400"
+              : isRejected
+              ? "text-gray-500 dark:text-gray-400"
               : isOverdue
               ? "text-red-600 dark:text-red-400"
               : "text-blue-600 dark:text-blue-400"
           }`}
         >
-          {stop ? (
-            <span>✅ Completed within SLA</span>
+          {isResolved ? (
+            <span>✅ Resolved within SLA</span>
+          ) : isRejected ? (
+            <span>❌ Rejected within SLA</span>
           ) : isOverdue ? (
             <span>🚨 SLA Breached</span>
           ) : (
@@ -129,7 +136,7 @@ function SLASection({ report }) {
       <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden">
         <div
           className={`h-full transition-all duration-1000 ${
-            stop ? "bg-green-500" : isOverdue ? "bg-red-500" : "bg-blue-600"
+            isResolved ? "bg-green-500" : isRejected ? "bg-gray-400" : isOverdue ? "bg-red-500" : "bg-blue-600"
           }`}
           style={{ width: `${progressPct}%` }}
         ></div>
@@ -777,11 +784,11 @@ const generateQRCode = async () => {
           </p>
         )}
       </div>
-      {/* ---------------- Pending Status Notice for Citizens ---------------- */}
-      {role === "citizen" && report.pendingStatus && (
+      {/* ---------------- Pending Status Notice for Officers/Admins ---------------- */}
+      {(role === "officer" || role === "admin") && report.pendingStatus && (
         <div className="bg-yellow-100 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 rounded-xl p-4 shadow-lg mb-4">
           <p className="font-semibold">
-            Your report status update to "{report.pendingStatus}" has been
+            Status update to "{report.pendingStatus}" has been
             submitted. It is awaiting admin approval before finalizing.
           </p>
         </div>
@@ -940,9 +947,16 @@ const generateQRCode = async () => {
           </div>
         ) : (
           <div className="bg-white dark:bg-gray-800 shadow-lg rounded-xl p-4 space-y-3">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-              Update Status (Note + Proof Required)
-            </h3>
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                Update Status (Note + Proof Required)
+              </h3>
+              <VoiceToText 
+                onTranscription={(text) => {
+                  setStatusNote(prev => prev ? `${prev} ${text}` : text);
+                }}
+              />
+            </div>
 
             <textarea
               placeholder="Enter a note about the update"
@@ -1030,9 +1044,16 @@ const generateQRCode = async () => {
         (report.adminVerification?.verified === null ||
           report.adminVerification?.verified === false) && (
           <div className="bg-yellow-50 dark:bg-yellow-900 p-4 rounded-xl shadow-lg space-y-3">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-              Admin Verification Required
-            </h3>
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                Admin Verification Required
+              </h3>
+              <VoiceToText 
+                onTranscription={(text) => {
+                  setAdminNote(prev => prev ? `${prev} ${text}` : text);
+                }}
+              />
+            </div>
             <p>
               Officer proposed status: <strong>{report.pendingStatus}</strong>
             </p>
@@ -1240,7 +1261,13 @@ const generateQRCode = async () => {
         {/* Action Area */}
         <div className="p-4 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-100 dark:border-gray-700">
           {canChat ? (
-            <div className="flex gap-2 bg-white dark:bg-gray-800 p-1.5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-inner">
+            <div className="flex items-center gap-2 bg-white dark:bg-gray-800 p-1.5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-inner">
+              <VoiceToText 
+                onTranscription={(text) => {
+                  setCommentText(prev => prev ? `${prev} ${text}` : text);
+                }}
+                className="ml-1"
+              />
               <input
                 type="text"
                 placeholder="Type your message to coordinate..."
