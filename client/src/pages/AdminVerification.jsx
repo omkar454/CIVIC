@@ -247,8 +247,8 @@ export default function AdminVerification() {
             )}
 
             <p className="text-sm text-gray-500 dark:text-gray-400">
-              Reported by: {report.reporter?.name || "Unknown"} (
-              {report.reporter?.email || "N/A"}) |{" "}
+              Reported by: {report.reporter?.name || "Anonymous"}
+              {report.reporter?.email && ` (${report.reporter.email})`} |{" "}
               {new Date(report.createdAt).toLocaleString()}
             </p>
             <p className="text-sm text-gray-500 dark:text-gray-400">

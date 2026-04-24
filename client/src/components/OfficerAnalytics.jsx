@@ -12,7 +12,6 @@ import {
   BarChart,
   Bar,
 } from "recharts";
-import ResourceForecastingHub from "./ResourceForecastingHub.jsx";
 
 export default function OfficerAnalytics() {
   const [trends, setTrends] = useState([]);
@@ -80,20 +79,6 @@ export default function OfficerAnalytics() {
         🧭 Officer Department Analytics
       </h2>
 
-      {/* 🔮 Predictive Demand Forecasting (Unified Intelligence Hub) */}
-      {resourceForecasts && Object.keys(resourceForecasts).length > 0 && (
-         <div className="mb-12 border-t-2 border-slate-100 dark:border-gray-800 pt-12">
-            <ResourceForecastingHub 
-               forecastData={resourceForecasts} 
-               resourceData={resourceIntelligence?.resource_requirements || {}}
-               weatherMetadata={resourceIntelligence?.weather_metadata || []}
-               selectedDept={userDept}
-               onDeptChange={() => {}} // Officers are locked to their own department
-               availableDepts={[userDept]}
-               role="officer"
-            />
-         </div>
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* 🚨 Emergency Alert History Column */}

@@ -461,7 +461,7 @@ const ReportCard = ({ report: r }) => {
       </p>
 
       <p className="text-xs text-slate-400">
-        Reported by: {r.reporter?.name} ({r.reporter?.email})
+        Reported by: {r.reporter?.name || "Anonymous"}
       </p>
 
       {r.transferStatus === "rejected" && (

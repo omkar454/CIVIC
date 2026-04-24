@@ -14,6 +14,7 @@ client/build/
 server/uploads/
 
 # 🧠 AI & Machine Learning
+ml-services/rag-service/models/
 # Allowing the ENTIRE runs directory as requested
 !ml-services/vision-engine/runs/
 !runs/

@@ -641,8 +641,8 @@ const generateQRCode = async () => {
         </div>
 
         <p className="text-sm text-gray-500 mt-2">
-          Reported by: {report.reporter?.name || "Unknown"} (
-          {report.reporter?.email || "N/A"}) |{" "}
+          Reported by: {report.reporter?.name || "Anonymous"}
+          {role === "admin" && report.reporter?.email && ` (${report.reporter.email})`} |{" "}
           {new Date(report.createdAt).toLocaleString()}
         </p>
         <p className="text-sm text-gray-500">
@@ -656,6 +656,22 @@ const generateQRCode = async () => {
             : report.category || "N/A"}{" "}
           | Severity Level: {report.severity !== null && report.severity !== undefined ? report.severity : "N/A"}
         </p>
+
+        <div className="flex flex-wrap items-center gap-2 mt-2">
+           <span className="text-sm text-gray-500">
+             📍 <strong>Location:</strong> {address || "Coordinates recorded"}
+           </span>
+           {report.lat && report.lng && (
+             <a
+               href={`https://www.google.com/maps?q=${report.lat},${report.lng}`}
+               target="_blank"
+               rel="noopener noreferrer"
+               className="text-[10px] bg-blue-50 text-blue-600 hover:bg-blue-100 px-2 py-1 rounded font-bold uppercase tracking-wider transition-colors"
+             >
+               🗺️ View on Google Maps
+             </a>
+           )}
+        </div>
 
         {/* AI Trust Indicator (Module 2) */}
         <div className="flex flex-col gap-3 mt-2 p-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-100 dark:border-gray-700">

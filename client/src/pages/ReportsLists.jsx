@@ -208,8 +208,8 @@ const handleTransfer = async () => {
                         </Badge>
                       </td>
                       <td>
-                        {r.reporter?.name || "Unknown"} (
-                        {r.reporter?.email || "N/A"})
+                        {r.reporter?.name || "Anonymous"}
+                        {userRole === "admin" && r.reporter?.email && ` (${r.reporter.email})`}
                       </td>
                       <td>
                         {new Date(r.createdAt).toLocaleString(undefined, {

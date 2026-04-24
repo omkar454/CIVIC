@@ -95,10 +95,17 @@ router.get("/:type/:id/data", async (req, res) => {
           <p><span class="label">Severity:</span> ${report.severity}</p>
           <p><span class="label">Address:</span> ${report.address || "N/A"}</p>
           <p><span class="label">Coordinates:</span> ${
-            report.location?.coordinates
-              ? report.location.coordinates.join(", ")
+            report.location?.coordinates?.length === 2
+              ? `${report.location.coordinates[1]}, ${report.location.coordinates[0]}`
               : "N/A"
           }</p>
+          ${
+            report.location?.coordinates?.length === 2
+              ? `<p><a href="https://www.google.com/maps?q=${report.location.coordinates[1]},${report.location.coordinates[0]}" target="_blank" style="display:inline-block; margin-top:5px; padding:8px 12px; background:#e8f5e9; color:#2e7d32; border:1px solid #c8e6c9; border-radius:5px; font-weight:bold;">🗺️ Open Exact Location in Google Maps</a></p>`
+              : report.address
+              ? `<p><a href="https://www.google.com/maps?q=${encodeURIComponent(report.address)}" target="_blank" style="display:inline-block; margin-top:5px; padding:8px 12px; background:#e8f5e9; color:#2e7d32; border:1px solid #c8e6c9; border-radius:5px; font-weight:bold;">🗺️ Search Address on Google Maps</a></p>`
+              : ""
+          }
           <p><span class="label">Votes:</span> ${report.votes}</p>
           <p><span class="label">Description:</span> ${
             report.description || "N/A"
@@ -126,9 +133,6 @@ router.get("/:type/:id/data", async (req, res) => {
           <h2>Reporter Info</h2>
           <p><span class="label">Name:</span> ${
             report.reporter?.name || "N/A"
-          }</p>
-          <p><span class="label">Email:</span> ${
-            report.reporter?.email || "N/A"
           }</p>
           <p><span class="label">Role:</span> ${
             report.reporter?.role || "N/A"

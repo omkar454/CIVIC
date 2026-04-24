@@ -39,15 +39,21 @@ L.Icon.Default.mergeOptions({
     "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
 });
 
-// Custom red marker
-const redIcon = new L.Icon({
-  iconUrl:
-    "https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png",
-  shadowUrl:
-    "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-});
+// Status color marker generator
+const getStatusIcon = (status) => {
+  let color = "grey"; // default for Open
+  if (status === "Acknowledged") color = "orange";
+  if (status === "In Progress") color = "blue";
+  if (status === "Resolved") color = "green";
+  if (status === "Rejected") color = "red";
+
+  return new L.Icon({
+    iconUrl: `https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-${color}.png`,
+    shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png",
+    iconSize: [25, 41],
+    iconAnchor: [12, 41],
+  });
+};
 
 // Color palette for pie chart
 const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#A020F0"];
@@ -63,11 +69,11 @@ const SEVERITY_COLORS = {
 
 // Status color mapping for officers
 const STATUS_COLORS = {
-  Open: "#E53935",
+  Open: "#6B7280",
   Acknowledged: "#FB8C00",
   "In Progress": "#1E88E5",
   Resolved: "#43A047",
-  Rejected: "#6B7280",
+  Rejected: "#E53935",
 };
 
 // Priority score color helper
@@ -511,7 +517,7 @@ useEffect(() => {
             {reports
               .filter((r) => r.lat && r.lng && selectedStatuses.includes(r.status))
               .map((r) => (
-                <Marker key={r._id} position={[r.lat, r.lng]} icon={redIcon}>
+                <Marker key={r._id} position={[r.lat, r.lng]} icon={getStatusIcon(r.status)}>
                   <Popup minWidth={250}>
                     <div className="text-sm">
                       <strong className="text-base text-blue-700">
@@ -544,12 +550,22 @@ useEffect(() => {
                         {r.description?.length > 80 && "..."}
                       </span>
 
-                      <Link
-                        to={`/reports/${r._id}`}
-                        className="text-blue-600 hover:underline font-medium"
-                      >
-                        🔍 View Details
-                      </Link>
+                      <div className="flex flex-col gap-1">
+                          <a
+                            href={`https://www.google.com/maps?q=${r.lat},${r.lng}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-emerald-600 hover:underline font-bold text-[11px] uppercase tracking-wider flex items-center gap-1"
+                          >
+                            🗺️ View on Google Maps
+                          </a>
+                          <Link
+                            to={`/reports/${r._id}`}
+                            className="text-blue-600 hover:underline font-medium flex items-center gap-1 mt-1"
+                          >
+                            🔍 View Details
+                          </Link>
+                      </div>
                     </div>
                   </Popup>
                 </Marker>

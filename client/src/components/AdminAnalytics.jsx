@@ -255,36 +255,7 @@ export default function AdminAnalytics() {
          </div>
       )}
 
-      {/* 🔮 Predictive Demand Forecasting */}
-      {forecastData.length > 0 && (
-        <div className="bg-gradient-to-r from-indigo-50 to-purple-50 dark:from-gray-800 dark:to-gray-900 border border-purple-100 dark:border-gray-700 p-4 rounded-xl shadow">
-          <h3 className="text-lg font-bold mb-1 text-indigo-900 dark:text-indigo-300">
-            🔮 7-Day Resource Demand Forecast
-          </h3>
-          <p className="text-xs text-gray-500 mb-4 italic">Powered by Facebook Prophet ML Algorithm</p>
-          <ResponsiveContainer width="100%" height={350}>
-            <LineChart data={forecastData}>
-              <XAxis dataKey="date" tick={{fontSize: 12}} />
-              <YAxis />
-              <Tooltip wrapperStyle={{ borderRadius: '8px' }} />
-              <Legend />
-              {Object.keys(resourceForecasts).map((dept, idx) => (
-                  <Line
-                    key={`forecast-${dept}`}
-                    type="monotone"
-                    dataKey={dept}
-                    stroke={colorPalette[idx % colorPalette.length]}
-                    strokeWidth={3}
-                    strokeDasharray="5 5"
-                    dot={{ r: 4 }}
-                    activeDot={{ r: 8 }}
-                    name={dept.toUpperCase()}
-                  />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      )}
+
 
       {/* 1️⃣ Complaint Trends (Last 6 Months) */}
       {trends.length > 0 && (
