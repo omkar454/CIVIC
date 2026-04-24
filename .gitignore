@@ -18,6 +18,12 @@ ml-services/rag-service/models/
 ml-services/vision-engine/*.jpg
 ml-services/vision-engine/*.jpeg
 ml-services/vision-engine/*.png
+ml-services/vision-engine/*.webp
+ml-services/vision-engine/*.gif
+ml-services/vision-engine/*.bmp
+ml-services/vision-engine/*.tiff
+ml-services/vision-engine/*.svg
+ml-services/vision-engine/*.heic
 # Allowing the ENTIRE runs directory as requested
 !ml-services/vision-engine/runs/
 !runs/
