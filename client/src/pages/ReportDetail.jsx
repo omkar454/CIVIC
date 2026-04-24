@@ -43,9 +43,7 @@ function SLASection({ report }) {
   if (!start) return null;
 
   const totalMs = (report.slaDays || 0) * 24 * 60 * 60 * 1000;
-  const isResolved = report.status === "Resolved";
-  const isRejected = report.status === "Rejected";
-  const stop = isResolved || isRejected;
+  const stop = report.status === "Resolved" || report.status === "Rejected";
   const isPaused = !!report.pendingStatus;
 
   const calculateRemaining = () => {
@@ -105,19 +103,19 @@ function SLASection({ report }) {
       <div className="flex items-center justify-between mt-1">
         <p
           className={`font-semibold text-lg ${
-            isResolved
+            stop
               ? "text-green-600 dark:text-green-400"
-              : isRejected
-              ? "text-gray-500 dark:text-gray-400"
               : isOverdue
               ? "text-red-600 dark:text-red-400"
               : "text-blue-600 dark:text-blue-400"
           }`}
         >
-          {isResolved ? (
-            <span>✅ Resolved within SLA</span>
-          ) : isRejected ? (
-            <span>❌ Rejected within SLA</span>
+          {stop ? (
+            <span>
+              {report.status === "Resolved" 
+                ? "✅ Resolved within SLA" 
+                : "❌ Rejected within SLA"}
+            </span>
           ) : isOverdue ? (
             <span>🚨 SLA Breached</span>
           ) : (
@@ -136,7 +134,7 @@ function SLASection({ report }) {
       <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2.5 overflow-hidden">
         <div
           className={`h-full transition-all duration-1000 ${
-            isResolved ? "bg-green-500" : isRejected ? "bg-gray-400" : isOverdue ? "bg-red-500" : "bg-blue-600"
+            stop ? "bg-green-500" : isOverdue ? "bg-red-500" : "bg-blue-600"
           }`}
           style={{ width: `${progressPct}%` }}
         ></div>
@@ -784,15 +782,8 @@ const generateQRCode = async () => {
           </p>
         )}
       </div>
-      {/* ---------------- Pending Status Notice for Officers/Admins ---------------- */}
-      {(role === "officer" || role === "admin") && report.pendingStatus && (
-        <div className="bg-yellow-100 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 rounded-xl p-4 shadow-lg mb-4">
-          <p className="font-semibold">
-            Status update to "{report.pendingStatus}" has been
-            submitted. It is awaiting admin approval before finalizing.
-          </p>
-        </div>
-      )}
+      {/* ---------------- Pending Status Notice for Citizens ---------------- */}
+      {/* Removed "Awaiting Admin Approval" banner for citizens as per request */}
       {/* ---------------- Media Gallery: Citizen & Officer Proofs (Separable) ---------------- */}
       {(() => {
         // 1. Citizen Evidence (Original)
@@ -939,10 +930,12 @@ const generateQRCode = async () => {
       {/* ---------------- Officer Status Controls ---------------- */}
       {canUpdateStatus ? (
         report.pendingStatus ? (
-          <div className="bg-yellow-100 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 rounded-xl p-4 shadow-lg">
-            <p className="font-semibold">
-              Status "{report.pendingStatus}" submitted. Awaiting admin
-              approval.
+          <div className="bg-yellow-50 dark:bg-yellow-900/30 border-2 border-yellow-200 dark:border-yellow-900/50 text-yellow-800 dark:text-yellow-200 rounded-xl p-4 shadow-sm animate-pulse mb-4">
+            <p className="font-bold flex items-center gap-2">
+              <span className="text-xl">⏳</span> Awaiting Manual Admin Verification for "{report.pendingStatus}"
+            </p>
+            <p className="text-xs mt-1 opacity-70">
+              The AI validation engine has flagged this update for a mandatory secondary human audit.
             </p>
           </div>
         ) : (
@@ -1092,21 +1085,19 @@ const generateQRCode = async () => {
             {report.statusHistory
               .sort((a, b) => (parseDate(a.at || a.createdAt) || 0) - (parseDate(b.at || b.createdAt) || 0))
               .map((s, idx) => {
-                // Compute display status based on admin verification
                 const getDisplayStatus = (statusObj) => {
-                  if (
-                    statusObj.status === "Resolved" ||
-                    statusObj.status === "Rejected"
-                  ) {
-                    if (statusObj.adminVerification) {
-                      if (statusObj.adminVerification.verified === true)
-                        return statusObj.status; // admin approved
-                      if (statusObj.adminVerification.verified === false)
-                        return `${statusObj.status} (rejected by admin)`; // admin rejected
-                    }
-                    return `${statusObj.status} (pending admin approval)`; // pending admin
+                  // If this history item is the current pending one
+                  if (report.pendingStatus === statusObj.status && !statusObj.adminVerification) {
+                    return `${statusObj.status} (Awaiting Admin Approval)`;
                   }
-                  return statusObj.status; // other statuses
+
+                  if (statusObj.adminVerification) {
+                    if (statusObj.adminVerification.verified === true)
+                      return `${statusObj.status} (Verified)`;
+                    if (statusObj.adminVerification.verified === false)
+                      return `${statusObj.status} (Rejected by Admin)`;
+                  }
+                  return statusObj.status;
                 };
 
                 const displayStatus = getDisplayStatus(s);
@@ -1115,49 +1106,57 @@ const generateQRCode = async () => {
                 return (
                   <div
                     key={idx}
-                    className="p-3 bg-gray-100 dark:bg-gray-700 rounded shadow-sm"
+                    className="relative pl-6 pb-6 border-l-2 border-gray-100 dark:border-gray-700 last:pb-0"
                   >
-                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
-                      Status:{" "}
-                      <span
-                        className={`px-2 py-1 rounded-full ${
+                    <div className={`absolute -left-[9px] top-1 w-4 h-4 rounded-full border-2 border-white dark:border-gray-800 ${
+                      statusColor[s.status]?.split(' ')[0] || "bg-gray-400"
+                    }`} />
+                    
+                    <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+                      <div className="flex justify-between items-start mb-2">
+                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${
                           statusColor[s.status] || "bg-gray-200 text-gray-700"
-                        }`}
-                      >
-                        {displayStatus}
-                      </span>
-                    </p>
-                    <p className="text-sm text-gray-700 dark:text-gray-300 mt-1">
-                      Note: {s.note || "No note provided"}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      Changed by: {s.by?.name || "Officer"} |{" "}
-                      {statusDate ? statusDate.toLocaleString() : "Date Unknown"}
-                    </p>
-
-                    {/* Officer Proof Media */}
-                    {s.media?.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {s.media.map((m, j) =>
-                          m.mime?.startsWith("image/") ? (
-                            <img
-                              key={j}
-                              src={m.url}
-                              onClick={() => window.open(m.url, "_blank")}
-                              alt="proof"
-                              className="w-32 h-32 object-cover rounded border cursor-pointer hover:scale-105 transition"
-                            />
-                          ) : (
-                            <video
-                              key={j}
-                              src={m.url}
-                              controls
-                              className="w-40 h-32 object-cover rounded border cursor-pointer hover:scale-105 transition"
-                            />
-                          )
-                        )}
+                        }`}>
+                          {displayStatus}
+                        </span>
+                        <span className="text-[10px] text-gray-400 font-medium">
+                          {statusDate ? statusDate.toLocaleString() : "Date Unknown"}
+                        </span>
                       </div>
-                    )}
+                      
+                      <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed mb-2">
+                        {s.note || "No comments provided for this update."}
+                      </p>
+                      
+                      <div className="flex items-center gap-2 mb-2">
+                        <div className="w-5 h-5 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-[10px]">👤</div>
+                        <span className="text-xs text-gray-500 font-medium">
+                          Updated by: {s.by?.name || "System/Officer"}
+                        </span>
+                      </div>
+
+                      {s.media?.length > 0 && (
+                        <div className="flex flex-wrap gap-2 pt-2 border-t border-gray-200/50 dark:border-gray-600/50">
+                          {s.media.map((m, j) =>
+                            m.mime?.startsWith("image/") ? (
+                              <img
+                                key={j}
+                                src={m.url}
+                                onClick={() => window.open(m.url, "_blank")}
+                                alt="proof"
+                                className="w-24 h-24 object-cover rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:scale-105 transition"
+                              />
+                            ) : (
+                              <video
+                                key={j}
+                                src={m.url}
+                                className="w-32 h-24 object-cover rounded-lg border border-gray-200 dark:border-gray-700 cursor-pointer hover:scale-105 transition"
+                              />
+                            )
+                          )}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })}
