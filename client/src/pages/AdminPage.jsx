@@ -50,6 +50,7 @@ export default function AdminPage() {
   ];
   const COLORS_STATUS = {
     Open: "#E53935",
+    "Pending AI Review": "#D97706", // Amber-600
     Acknowledged: "#FB8C00",
     "In Progress": "#1E88E5",
     Resolved: "#43A047",
@@ -109,7 +110,7 @@ export default function AdminPage() {
       const data = res.data || {};
       const normalizedTrend = (data.resolutionTrend || []).map((item) => {
         const newItem = { date: item.date };
-        const ALL_STATUSES = ["Open", "Acknowledged", "In Progress", "Resolved", "Rejected", "Closed"];
+        const ALL_STATUSES = ["Open", "Pending AI Review", "Acknowledged", "In Progress", "Resolved", "Rejected", "Closed"];
         ALL_STATUSES.forEach((status) => {
           newItem[status] = item[status] ?? 0;
         });

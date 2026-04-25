@@ -294,17 +294,21 @@ export default function ReportDetail() {
         setReport({ ...data, lat, lng });
         setAddress(data.address || ""); // 🏠 Store database address as initial value
 
-        // 🌍 Try to refresh address from Nominatim (only if browser is allowed)
+        // 🌍 Use backend proxy for reverse geocoding
         try {
-          const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
-          const response = await fetch(url);
+          const response = await fetch(`http://localhost:5000/api/geocoding/reverse?lat=${lat}&lon=${lng}`);
           if (response.ok) {
             const geoData = await response.json();
-            if (geoData.display_name) setAddress(geoData.display_name);
+            if (geoData.display_name) {
+              setAddress(geoData.display_name);
+            }
           }
-        } catch {
-          console.warn("UI Geocoding failed, using stored address.");
-          // No need to setAddress(""), already set to data.address
+        } catch (err) {
+          console.warn("Proxy Geocoding failed:", err.message);
+          // If proxy fails and we don't have a good address, use coordinates as fallback
+          if (!data.address || data.address.startsWith("Lat:")) {
+            setAddress(`Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`);
+          }
         }
       }
     } catch (err) {

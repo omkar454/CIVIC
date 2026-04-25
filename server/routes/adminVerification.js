@@ -297,7 +297,7 @@ router.get("/pending", auth("admin"), async (req, res) => {
   try {
     // 1️⃣ Geo reports - ONLY "Open" status reports submitted by citizens
     const geoReports = await Report.find({
-      status: "Open",
+      status: { $in: ["Open", "Pending AI Review"] },
       $or: [
         { "citizenAdminVerification.verified": null },
         { citizenAdminVerification: { $exists: false } },
@@ -318,7 +318,7 @@ router.get("/pending", auth("admin"), async (req, res) => {
 
     // 2️⃣ Text/manual reports - ONLY "Open" status reports
     const textReports = await TextAddressReport.find({
-      status: "Open",
+      status: { $in: ["Open", "Pending AI Review"] },
       $or: [
         { "citizenAdminVerification.verified": null },
         { citizenAdminVerification: { $exists: false } },

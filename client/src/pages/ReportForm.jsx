@@ -65,13 +65,13 @@ function isWithinBandra(lat, lng) {
 
 async function fetchAddress(lat, lng) {
   try {
-    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
-    const response = await fetch(url);
-    if (!response.ok) throw new Error("Geocoding service error");
+    // 🌐 Use backend proxy to avoid CORS/User-Agent issues
+    const response = await fetch(`http://localhost:5000/api/geocoding/reverse?lat=${lat}&lon=${lng}`);
+    if (!response.ok) throw new Error("Backend geocoding failed");
     const data = await response.json();
     return data.display_name || `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`;
   } catch (error) {
-    console.warn("UI Reverse geocoding failed:", error.message);
+    console.warn("Proxy Geocoding failed:", error.message);
     return `Lat: ${lat.toFixed(4)}, Lng: ${lng.toFixed(4)}`;
   }
 }

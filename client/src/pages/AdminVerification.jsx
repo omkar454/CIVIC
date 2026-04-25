@@ -47,36 +47,34 @@ export default function AdminVerification() {
       const res = await API.get("/admin/verification/pending");
       const data = res.data || [];
 
-      const withAddress = await Promise.all(
-        data.map(async (r) => {
-          if (r.location?.coordinates?.length === 2) {
-            const [lng, lat] = r.location.coordinates;
-            r.lat = lat;
-            r.lng = lng;
+      // 🕒 Process geocoding sequentially with a small delay to avoid "Too many requests"
+      const withAddress = [];
+      for (const r of data) {
+        if (r.location?.coordinates?.length === 2) {
+          const [lng, lat] = r.location.coordinates;
+          r.lat = lat;
+          r.lng = lng;
 
-            // 📍 ONLY reverse-geocode if the address is missing or is just coordinates
-            if (!r.address || r.address.startsWith("Lat:")) {
-              try {
-                // 🌍 UI-Side Reverse Geocoding (Direct to Nominatim)
-                const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`;
-                const response = await fetch(url);
-                if (response.ok) {
-                  const geoData = await response.json();
-                  r.address = geoData.display_name || r.address;
-                }
-              } catch (err) {
-                console.warn("UI Reverse geocoding failed for Admin view:", err.message);
-                // Keep existing r.address if fetch fails
+          if (!r.address || r.address.startsWith("Lat:")) {
+            try {
+              // 🌍 Use backend proxy for reverse geocoding
+              const response = await fetch(`http://localhost:5000/api/geocoding/reverse?lat=${lat}&lon=${lng}`);
+              if (response.ok) {
+                const geoData = await response.json();
+                r.address = geoData.display_name || r.address;
               }
+              // Wait 1 second between requests as per Nominatim policy
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            } catch (err) {
+              console.warn("Proxy Reverse geocoding failed for Admin view:", err.message);
             }
-          } else {
-            // Text-based report
-            r.lat = null;
-            r.lng = null;
           }
-          return r;
-        })
-      );
+        } else {
+          r.lat = null;
+          r.lng = null;
+        }
+        withAddress.push(r);
+      }
 
       // Auto-populate AI suggestions into states
       const initialSeverities = {};
@@ -186,6 +184,7 @@ export default function AdminVerification() {
 
   const statusColor = {
     Open: "bg-red-100 text-red-700",
+    "Pending AI Review": "bg-amber-100 text-amber-700 border border-amber-200",
     Acknowledged: "bg-yellow-100 text-yellow-700",
     "In Progress": "bg-blue-100 text-blue-700",
     Resolved: "bg-green-100 text-green-700",

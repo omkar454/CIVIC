@@ -22,6 +22,7 @@ import qrCodeRoutes from "./routes/qrCode.js";
 import chatBotRoute from "./routes/chatBot.js"
 import officerChatRoutes from "./routes/officerChat.js";
 import mlRoutes from "./routes/mlRoutes.js"; // ✅ Import AI Analytics Proxy Rules
+import geocodingRoutes from "./routes/geocoding.js"; // ✅ Import Geocoding proxy
 import { runSLACheck } from "./utils/slaEngine.js"; // ✅ Import SLA Engine
 
 dotenv.config({ path: "./.env" });
@@ -55,6 +56,7 @@ app.use("/api/qr", qrCodeRoutes);
 app.use("/api/chat", chatBotRoute);
 app.use("/api/officer-chat", officerChatRoutes);
 app.use("/api/ml", mlRoutes); // ✅ Mount API Gateway for Python Microservices
+app.use("/api/geocoding", geocodingRoutes); // ✅ Mount Geocoding proxy
 
 // Health check
 app.get("/", (req, res) => res.json({ message: "Server is working 🚀" }));

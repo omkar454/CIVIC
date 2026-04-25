@@ -235,7 +235,7 @@ router.get("/analytics", auth("admin"), async (req, res) => {
     const allReports = [...reports, ...textReports];
 
     // Statuses to ensure representativeness
-    const ALL_STATUSES = ["Open", "Acknowledged", "In Progress", "Resolved", "Rejected", "Closed"];
+    const ALL_STATUSES = ["Open", "Pending AI Review", "Acknowledged", "In Progress", "Resolved", "Rejected", "Closed"];
 
     // By category
     const byCategory = [];
